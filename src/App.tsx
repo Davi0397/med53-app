@@ -22,6 +22,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [sessaoInvalida, setSessaoInvalida] = useState(false);
   const [viewMode, setViewMode] = useState<'home' | 'feed'>('home');
+  
+  // NOVO: Controle do Menu Mobile
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Auth
   const [isSignUp, setIsSignUp] = useState(false);
@@ -32,8 +35,8 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState(''); 
 
   // --- FILTROS ---
-  const [allData, setAllData] = useState<any[]>([]); // Dados brutos para estrutura
-  const [filtroMapa, setFiltroMapa] = useState<any>({}); // Mapa visual processado
+  const [allData, setAllData] = useState<any[]>([]); 
+  const [filtroMapa, setFiltroMapa] = useState<any>({}); 
   const [activeDisc, setActiveDisc] = useState<string | null>(null); 
   const [activeTema, setActiveTema] = useState<string | null>(null); 
 
@@ -266,8 +269,9 @@ export default function App() {
     e.preventDefault(); setLoading(true);
     try {
       if (isForgot) {
+        // Envia email de recuperação usando a URL atual do site
         await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
-        alert("E-mail enviado!"); setIsForgot(false);
+        alert("E-mail enviado! Verifique sua caixa de entrada."); setIsForgot(false);
       } else if (isSignUp) {
         if (email !== confirmEmail) throw new Error("Os e-mails não conferem.");
         if (password !== confirmPassword) throw new Error("As senhas não conferem.");
@@ -304,7 +308,9 @@ export default function App() {
           <button type="submit" className="w-full bg-[#00a884] text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#00a884]/20 transition-transform active:scale-95">{isForgot ? 'Enviar Link' : (isSignUp ? 'Cadastrar' : 'Entrar')}</button>
         </form>
         <div className="mt-6 space-y-2 text-center">
-          {!isForgot && (<><button onClick={() => setIsForgot(true)} className="block w-full text-[10px] font-bold text-slate-400 hover:text-[#00a884]">Esqueci minha senha</button><button onClick={() => {setIsSignUp(!isSignUp); setConfirmEmail(''); setConfirmPassword('');}} className="block w-full text-[10px] font-black text-slate-600 uppercase tracking-tighter hover:text-[#00a884]">{isSignUp ? 'Já tem conta? Faça Login' : 'Não tem conta? Cadastre-se'}</button></>)}
+          {/* CORREÇÃO AQUI: Botão esqueci senha só aparece se NÃO for cadastro */}
+          {!isForgot && !isSignUp && (<button onClick={() => setIsForgot(true)} className="block w-full text-[10px] font-bold text-slate-400 hover:text-[#00a884]">Esqueci minha senha</button>)}
+          {!isForgot && (<button onClick={() => {setIsSignUp(!isSignUp); setConfirmEmail(''); setConfirmPassword('');}} className="block w-full text-[10px] font-black text-slate-600 uppercase tracking-tighter hover:text-[#00a884] mt-2">{isSignUp ? 'Já tem conta? Faça Login' : 'Não tem conta? Cadastre-se'}</button>)}
           {isForgot && (<button onClick={() => setIsForgot(false)} className="text-[10px] font-black text-slate-600 uppercase tracking-tighter hover:text-[#00a884] flex items-center justify-center gap-1 mx-auto"><ArrowLeft size={12}/> Voltar</button>)}
         </div>
       </div>
@@ -317,7 +323,13 @@ export default function App() {
     <div className="min-h-screen bg-[#FBFBFB] text-slate-800 font-sans text-[13px] flex flex-col overflow-hidden">
       <nav className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          {viewMode === 'feed' && <button onClick={() => setViewMode('home')} className="p-2 mr-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><ArrowLeft size={16}/></button>}
+          {/* MENU HAMBURGUER (Só aparece no mobile e na tela de feed) */}
+          {viewMode === 'feed' && !abaAdmin && (
+            <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+              <Menu size={20} />
+            </button>
+          )}
+          {viewMode === 'feed' && <button onClick={() => setViewMode('home')} className="hidden md:block p-2 mr-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><ArrowLeft size={16}/></button>}
           <h1 onClick={() => setAbaAdmin(null)} className="text-lg font-black text-slate-900 tracking-tighter cursor-pointer">MED<span className="text-[#00a884]">53</span></h1>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
@@ -328,10 +340,21 @@ export default function App() {
 
       <div className="flex flex-1 overflow-hidden relative">
         
+        {/* OVERLAY ESCURO (Para fechar o menu clicando fora) */}
+        {isMobileMenuOpen && viewMode === 'feed' && !abaAdmin && (
+          <div className="fixed inset-0 bg-black/50 z-40 md:hidden animate-in fade-in" onClick={() => setIsMobileMenuOpen(false)}></div>
+        )}
+
+        {/* SIDEBAR RESPONSIVA (Mobile = Offscreen, Desktop = Normal) */}
         {viewMode === 'feed' && !abaAdmin && (
-          <aside className={`fixed md:relative inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 transition-transform duration-300 md:translate-x-0`}>
+          <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 transition-transform duration-300 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:relative md:z-0 shadow-2xl md:shadow-none`}>
             <div className="p-6 overflow-y-auto h-full">
-              <div className="flex items-center gap-2 mb-8 text-slate-700 uppercase font-black text-[10px] tracking-[0.2em] border-b pb-2"><Filter size={14} className="text-[#00a884]"/> Filtros Ativos</div>
+              <div className="flex items-center justify-between mb-8 pb-2 border-b">
+                <div className="flex items-center gap-2 text-slate-700 uppercase font-black text-[10px] tracking-[0.2em]"><Filter size={14} className="text-[#00a884]"/> Filtros</div>
+                {/* Botão de Fechar dentro do Menu */}
+                <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-slate-400 hover:text-slate-800"><X size={20}/></button>
+              </div>
+              
               <div className="space-y-4">
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                   <span className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Origem</span>
@@ -343,7 +366,7 @@ export default function App() {
                   <span className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Disciplinas</span>
                   {selectedDiscs.map(d => <div key={d} className="flex items-center gap-2 text-xs font-bold text-slate-700"><CheckCircle2 size={12} className="text-[#00a884]"/> {d}</div>)}
                 </div>
-                <button onClick={() => setViewMode('home')} className="w-full border border-slate-300 text-slate-600 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 mt-4">Alterar Filtros</button>
+                <button onClick={() => { setViewMode('home'); setIsMobileMenuOpen(false); }} className="w-full border border-slate-300 text-slate-600 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 mt-4">Alterar Filtros</button>
               </div>
             </div>
           </aside>
@@ -480,7 +503,7 @@ export default function App() {
           {viewMode === 'feed' && !abaAdmin && (
             <div className="max-w-3xl mx-auto space-y-8 animate-in slide-in-from-right-4 p-4 md:p-12">
               {!isAssinante && !isAdmin ? (
-                <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-2xl text-center mt-8"><div className="flex justify-center mb-6"><div className="bg-[#00a884]/10 p-4 rounded-full"><CreditCard className="text-[#00a884]" size={40} /></div></div><h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tighter">Escolha seu Plano</h2><p className="text-slate-600 mb-12 leading-relaxed font-bold text-sm max-w-xl mx-auto">Libere acesso. Aceitamos Cartão de Crédito (até 12x), PIX e Boleto via Mercado Pago.</p><div className="grid md:grid-cols-3 gap-6"><div className="p-8 border-2 border-slate-100 rounded-3xl text-left bg-white hover:border-[#00a884]/30 hover:shadow-xl transition-all"><h3 className="font-black text-slate-800 text-lg">Mensal</h3><div className="mt-4 mb-6"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">24,90</span><span className="text-xs font-bold text-slate-400">/mês</span></div><button onClick={() => window.open('https://mpago.li/2yjdqU2', '_blank')} className="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#00a884] transition-colors">Assinar</button></div><div className="p-8 border-2 border-slate-100 rounded-3xl text-left bg-white hover:border-[#00a884]/30 hover:shadow-xl transition-all relative"><h3 className="font-black text-slate-800 text-lg">Semestral</h3><div className="mt-4 mb-2"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">119</span></div><p className="text-[11px] font-black text-[#00a884] mb-6">👉 R$ 19,80/mês</p><button onClick={() => window.open('LINK_SEMESTRAL', '_blank')} className="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#00a884] transition-colors">Indisponível!</button></div><div className="p-8 border-2 border-[#00a884] rounded-3xl text-left bg-[#00a884]/5 relative shadow-lg shadow-[#00a884]/10"><div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#00a884] text-white text-[9px] px-3 py-1 rounded-full font-black uppercase tracking-widest shadow-md">Recomendado</div><h3 className="font-black text-slate-800 text-lg">Anual</h3><div className="mt-4 mb-2"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">199</span></div><p className="text-[11px] font-black text-[#00a884] mb-6">👉 R$ 16,60/mês</p><button onClick={() => window.open('LINK_ANUAL', '_blank')} className="w-full bg-[#00a884] text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#008f6f] transition-colors">Indisponível</button></div></div><p className="mt-10 text-[11px] font-bold text-slate-400">Pagou? <button onClick={() => window.open('https://wa.me/SEU_ZAP', '_blank')} className="text-[#00a884] underline">Envie o comprovante</button> para liberação imediata.</p></div>
+                <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-2xl text-center mt-8"><div className="flex justify-center mb-6"><div className="bg-[#00a884]/10 p-4 rounded-full"><CreditCard className="text-[#00a884]" size={40} /></div></div><h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tighter">Escolha seu Plano</h2><p className="text-slate-600 mb-12 leading-relaxed font-bold text-sm max-w-xl mx-auto">Libere acesso ilimitado. Aceitamos Cartão de Crédito (até 12x), PIX e Boleto via Mercado Pago.</p><div className="grid md:grid-cols-3 gap-6"><div className="p-8 border-2 border-slate-100 rounded-3xl text-left bg-white hover:border-[#00a884]/30 hover:shadow-xl transition-all"><h3 className="font-black text-slate-800 text-lg">Mensal</h3><div className="mt-4 mb-6"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">24,90</span><span className="text-xs font-bold text-slate-400">/mês</span></div><button onClick={() => window.open('LINK_MENSAL', '_blank')} className="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#00a884] transition-colors">Assinar</button></div><div className="p-8 border-2 border-slate-100 rounded-3xl text-left bg-white hover:border-[#00a884]/30 hover:shadow-xl transition-all relative"><h3 className="font-black text-slate-800 text-lg">Semestral</h3><div className="mt-4 mb-2"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">119</span></div><p className="text-[11px] font-black text-[#00a884] mb-6">👉 R$ 19,80/mês</p><button onClick={() => window.open('LINK_SEMESTRAL', '_blank')} className="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#00a884] transition-colors">Assinar</button></div><div className="p-8 border-2 border-[#00a884] rounded-3xl text-left bg-[#00a884]/5 relative shadow-lg shadow-[#00a884]/10"><div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#00a884] text-white text-[9px] px-3 py-1 rounded-full font-black uppercase tracking-widest shadow-md">Recomendado</div><h3 className="font-black text-slate-800 text-lg">Anual</h3><div className="mt-4 mb-2"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">199</span></div><p className="text-[11px] font-black text-[#00a884] mb-6">👉 R$ 16,60/mês</p><button onClick={() => window.open('LINK_ANUAL', '_blank')} className="w-full bg-[#00a884] text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#008f6f] transition-colors">Assinar Agora</button></div></div><p className="mt-10 text-[11px] font-bold text-slate-400">Pagou? <button onClick={() => window.open('https://wa.me/SEU_ZAP', '_blank')} className="text-[#00a884] underline">Envie o comprovante</button> para liberação imediata.</p></div>
               ) : (
                 <div className="space-y-8">
                   <div className="grid grid-cols-2 gap-4"><div className="bg-white p-5 rounded-xl border border-slate-200 flex items-center gap-4 shadow-sm"><div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center text-slate-600"><BarChart3 size={20}/></div><div><span className="block text-xl font-black text-slate-900">{stats.totalSemana}</span><span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Resolvidas</span></div></div><div className="bg-[#00a884] p-5 rounded-xl flex items-center gap-4 shadow-lg shadow-[#00a884]/20 text-white"><div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center"><Target size={20}/></div><div><span className="block text-xl font-black">{stats.taxa}%</span><span className="text-[9px] font-black opacity-80 uppercase tracking-widest">Taxa de Acerto</span></div></div></div>
@@ -524,7 +547,7 @@ export default function App() {
 
                       if (exp) {
                           const diff = exp.getTime() - hoje.getTime();
-                          const dias = Math.ceil(diff / (86400000)); // 1000*60*60*24
+                          const dias = Math.ceil(diff / (86400000)); 
 
                           if (dias < 0) {
                               textoPrazo = 'Expirado';
@@ -543,7 +566,6 @@ export default function App() {
                           <td className="p-4 font-bold text-slate-800 text-[12px]">{u.email}</td>
                           <td className="p-4"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${u.assinatura?.status === 'ativo' ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'}`}>{u.assinatura?.status || 'pendente'}</span></td>
                           
-                          {/* NOVA CÉLULA COM DATA E AVISO */}
                           <td className="p-4">
                               <div className="text-[11px] font-mono text-slate-600 mb-0.5 flex items-center gap-1.5">
                                  <Clock size={12} className="opacity-50"/> {dataFormatada}
