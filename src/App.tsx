@@ -4,7 +4,8 @@ import {
   LogOut, CheckCircle2, Eye, Info, Filter, Check, 
   Menu, X, Lock, Star, Target, ArrowLeft, BarChart3, Mail, List, 
   Save, CreditCard, AlertTriangle, Loader2, Archive, Play, 
-  ChevronRight, Layout, FolderOpen, Folder, Clock
+  ChevronRight, ChevronLeft, Layout, FolderOpen, Folder, Clock,
+  Trash2, Edit, Flame
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO ---
@@ -22,7 +23,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [sessaoInvalida, setSessaoInvalida] = useState(false);
   const [viewMode, setViewMode] = useState<'home' | 'feed'>('home');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // NOVO: Estado do menu
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Streak (Foguinho)
+  const [streak, setStreak] = useState(0);
 
   // Auth
   const [isSignUp, setIsSignUp] = useState(false);
@@ -44,18 +48,23 @@ export default function App() {
   const [selectedSubtemas, setSelectedSubtemas] = useState<string[]>([]);
   const [filterOrigem, setFilterOrigem] = useState<'todos' | 'originais' | 'antigas'>('todos');
 
-  // Dados do App
+  // Dados do App & Paginação
   const [questoes, setQuestoes] = useState<any[]>([]);
   const [respostas, setRespostas] = useState<Record<number, number>>({});
   const [explicas, setExplicas] = useState<Record<number, boolean>>({});
   const [stats, setStats] = useState({ totalSemana: 0, taxa: 0 });
+  
+  // PAGINAÇÃO
+  const [page, setPage] = useState(0);
+  const [itemsPerPage, setItemsPerPage] = useState(25); // Padrão 25
+  const [hasMore, setHasMore] = useState(false);
 
-  // Admin
+  // Admin Geral
   const [abaAdmin, setAbaAdmin] = useState<'questoes' | 'usuarios' | null>(null);
   const [listaUsuarios, setListaUsuarios] = useState<any[]>([]);
   const [datasTemp, setDatasTemp] = useState<Record<string, string>>({});
 
-  // Form Admin
+  // Form Admin (Cadastro Novo)
   const [fEnun, setFEnun] = useState('');
   const [fOps, setFOps] = useState(['', '', '', '']);
   const [fCorr, setFCorr] = useState(0);
@@ -63,8 +72,62 @@ export default function App() {
   const [fTema, setFTema] = useState('');
   const [fSubtema, setFSubtema] = useState('');
   const [fJust, setFJust] = useState('');
-  const [fImg, setFImg] = useState('');
+  const [fImg, setFImg] = useState(''); // Imagem do Enunciado
+  const [fImgJust, setFImgJust] = useState(''); // Imagem da Justificativa
   const [fOrigemCadastro, setFOrigemCadastro] = useState('med53'); 
+
+  // --- ADMIN IN-LINE (Edição Rápida) ---
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+
+  const startEditing = (q: any) => {
+    setEditingId(q.id);
+    setEditForm({ ...q }); 
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditForm({});
+  };
+
+  const handleInlineDelete = async (id: number) => {
+    if (!confirm("Tem certeza absoluta que deseja APAGAR esta questão?")) return;
+    
+    const { error } = await supabase.from('questoes').delete().eq('id', id);
+    if (error) {
+      alert("Erro ao apagar: " + error.message);
+    } else {
+      setQuestoes(prev => prev.filter(q => q.id !== id));
+      alert("Questão apagada!");
+    }
+  };
+
+  const handleInlineSave = async () => {
+    if (!editForm.enunciado || !editForm.disciplina) return alert("Preencha os campos obrigatórios.");
+    
+    setLoading(true);
+    const { error } = await supabase.from('questoes').update({
+      enunciado: editForm.enunciado,
+      opcoes: editForm.opcoes,
+      resposta_correta: editForm.resposta_correta,
+      justificativa: editForm.justificativa,
+      disciplina: editForm.disciplina,
+      tema: editForm.tema,
+      subtema: editForm.subtema,
+      imagem_url: editForm.imagem_url,
+      imagem_justificativa: editForm.imagem_justificativa 
+    }).eq('id', editingId);
+
+    if (error) {
+      alert("Erro ao salvar: " + error.message);
+    } else {
+      setQuestoes(prev => prev.map(q => q.id === editingId ? editForm : q));
+      setEditingId(null);
+      setEditForm({});
+      alert("Questão atualizada com sucesso!");
+    }
+    setLoading(false);
+  };
 
   // --- INICIALIZAÇÃO ---
   useEffect(() => {
@@ -123,12 +186,17 @@ export default function App() {
 
   async function inicializar(u: any, token: string) {
     try {
-      const { data: perfil } = await supabase.from('perfis').select('is_admin, last_session_id').eq('id', u.id).maybeSingle();
+      const { data: perfil } = await supabase.from('perfis').select('*').eq('id', u.id).maybeSingle();
+      
       if (perfil?.last_session_id && perfil.last_session_id !== token) {
         setSessaoInvalida(true); await supabase.auth.signOut(); return;
       }
       const { data: ass } = await supabase.from('assinaturas').select('*').eq('user_id', u.id).maybeSingle();
-      setUser(u); setIsAdmin(perfil?.is_admin || false);
+      
+      setUser(u); 
+      setIsAdmin(perfil?.is_admin || false);
+      setStreak(perfil?.streak_atual || 0);
+
       const isValida = ass?.status === 'ativo' && new Date(ass.data_expiracao) > new Date();
       setAssinatura(isValida ? ass : { status: 'expirado' });
       
@@ -136,6 +204,30 @@ export default function App() {
       await carregarStats(u.id);
       if (perfil?.is_admin) carregarListaUsuarios();
     } catch { handleLogout(true); } finally { setLoading(false); }
+  }
+
+  // --- LÓGICA DO STREAK (FOGUINHO) ---
+  async function atualizarStreak(uid: string) {
+    const hoje = new Date().toISOString().split('T')[0];
+    const { data: perfil } = await supabase.from('perfis').select('streak_atual, ultima_atividade').eq('id', uid).single();
+    
+    if (perfil) {
+        // Se a última atividade não foi hoje
+        if (perfil.ultima_atividade !== hoje) {
+            const ontem = new Date();
+            ontem.setDate(ontem.getDate() - 1);
+            const dataOntem = ontem.toISOString().split('T')[0];
+
+            let novoStreak = 1;
+            // Se estudou ontem, aumenta o streak. Se não, reseta para 1.
+            if (perfil.ultima_atividade === dataOntem) {
+                novoStreak = (perfil.streak_atual || 0) + 1;
+            }
+
+            await supabase.from('perfis').update({ streak_atual: novoStreak, ultima_atividade: hoje }).eq('id', uid);
+            setStreak(novoStreak);
+        }
+    }
   }
 
   async function carregarListaUsuarios() {
@@ -198,23 +290,32 @@ export default function App() {
     });
   }, [filtroMapa]); 
 
-  async function buscarQuestoes() {
+  // --- BUSCA COM PAGINAÇÃO ---
+  async function buscarQuestoes(novaPagina = 0) {
     if (!user) return;
     setLoading(true);
-    let q = supabase.from('questoes').select('*').limit(5000);
+    setPage(novaPagina);
+
+    let q = supabase.from('questoes').select('*', { count: 'exact' });
     
+    // Filtros
     if (selectedDiscs.length > 0) q = q.in('disciplina', selectedDiscs);
     if (selectedTemas.length > 0) q = q.in('tema', selectedTemas);
-    
     if (filterOrigem === 'originais') q = q.eq('origem', 'med53');
     if (filterOrigem === 'antigas') q = q.neq('origem', 'med53');
 
-    const { data, error } = await q;
+    // Paginação (Range do Supabase)
+    const inicio = novaPagina * itemsPerPage;
+    const fim = inicio + itemsPerPage - 1;
+    q = q.range(inicio, fim);
+
+    const { data, count, error } = await q;
     
     if (error) {
       console.error('Erro:', error);
       setQuestoes([]);
     } else {
+      // Filtragem de subtemas no cliente
       const filtradas = (data || []).filter(item => {
           if (item.subtema) {
               return selectedSubtemas.some(selected => 
@@ -224,6 +325,7 @@ export default function App() {
           return true;
       });
       setQuestoes(filtradas);
+      setHasMore(count ? (inicio + itemsPerPage) < count : false);
     }
     setLoading(false);
   }
@@ -336,17 +438,23 @@ export default function App() {
       <nav className="shrink-0 bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-2">
           
-          {/* MENU HAMBURGUER (Só aparece no mobile e no modo FEED) */}
           {viewMode === 'feed' && (
              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
                  {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
              </button>
           )}
 
-          {viewMode === 'feed' && <button onClick={() => setViewMode('home')} className="p-2 mr-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><ArrowLeft size={16}/></button>}
+          {viewMode === 'feed' && <button onClick={() => { setViewMode('home'); setPage(0); }} className="p-2 mr-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><ArrowLeft size={16}/></button>}
           <h1 onClick={() => setAbaAdmin(null)} className="text-lg font-black text-slate-900 tracking-tighter cursor-pointer">MED<span className="text-[#00a884]">53</span></h1>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
+          
+          {/* FOGUINHO (STREAK) */}
+          <div className="flex items-center gap-1 bg-orange-50 text-orange-600 px-3 py-1 rounded-full border border-orange-100" title="Dias seguidos de estudo">
+              <Flame size={14} fill="currentColor" className={streak > 0 ? "animate-pulse" : "opacity-50"} />
+              <span className="font-black text-[10px]">{streak}</span>
+          </div>
+
           {isAdmin && (<div className="hidden sm:flex gap-2"><button onClick={() => setAbaAdmin(abaAdmin === 'questoes' ? null : 'questoes')} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all ${abaAdmin === 'questoes' ? 'bg-[#00a884] text-white' : 'text-slate-600'}`}>Questões</button><button onClick={() => setAbaAdmin(abaAdmin === 'usuarios' ? null : 'usuarios')} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all ${abaAdmin === 'usuarios' ? 'bg-[#00a884] text-white' : 'text-slate-600'}`}>Alunos</button></div>)}
           <button onClick={() => handleLogout(false)} className="text-slate-600 hover:text-rose-600 transition-colors flex items-center gap-1 font-black uppercase text-[10px]">Sair <LogOut size={16}/></button>
         </div>
@@ -357,7 +465,6 @@ export default function App() {
         
         {viewMode === 'feed' && !abaAdmin && (
           <>
-            {/* OVERLAY ESCURO (Quando o menu está aberto no mobile) */}
             {mobileMenuOpen && (
                 <div 
                     className="fixed inset-0 bg-black/40 z-30 md:hidden backdrop-blur-sm transition-opacity"
@@ -365,7 +472,6 @@ export default function App() {
                 />
             )}
 
-            {/* SIDEBAR DE FILTROS (Com classe dinâmica para abrir/fechar no mobile) */}
             <aside className={`fixed md:relative inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 transition-transform duration-300 md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="p-6 overflow-y-auto h-full">
                 <div className="flex items-center justify-between mb-8 border-b pb-2">
@@ -394,8 +500,6 @@ export default function App() {
           
           {viewMode === 'home' && !abaAdmin && (
             <div className="h-full flex flex-col animate-in fade-in">
-              
-              {/* CABEÇALHO */}
               <div className="shrink-0 bg-white border-b border-slate-200 p-6 flex flex-col md:flex-row justify-between items-center gap-4 z-30 shadow-sm">
                 <div>
                   <h2 className="text-2xl font-black text-slate-900 tracking-tight">Filtros Inteligentes</h2>
@@ -408,16 +512,13 @@ export default function App() {
                 </div>
                 
                 <div className="bg-slate-100 p-1 rounded-lg flex shrink-0">
-                     <button onClick={() => setFilterOrigem('todos')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'todos' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Todas</button>
-                     <button onClick={() => setFilterOrigem('originais')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'originais' ? 'bg-[#00a884] text-white shadow-sm' : 'text-slate-500'}`}>Originais</button>
-                     <button onClick={() => setFilterOrigem('antigas')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'antigas' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}>Antigas</button>
+                      <button onClick={() => setFilterOrigem('todos')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'todos' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Todas</button>
+                      <button onClick={() => setFilterOrigem('originais')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'originais' ? 'bg-[#00a884] text-white shadow-sm' : 'text-slate-500'}`}>Originais</button>
+                      <button onClick={() => setFilterOrigem('antigas')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'antigas' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}>Antigas</button>
                 </div>
               </div>
 
-              {/* COLUNAS DE FILTRO */}
               <div className="flex-1 overflow-hidden flex flex-col md:flex-row relative bg-white pb-[70px]">
-                
-                {/* COLUNA 1 */}
                 <div className="w-full md:w-1/3 border-r border-slate-200 bg-white flex flex-col overflow-hidden h-full">
                     <div className="shrink-0 p-3 bg-slate-50 border-b font-black text-[10px] text-slate-500 uppercase tracking-widest flex justify-between">
                         <span>1. Disciplinas</span>
@@ -445,7 +546,6 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* COLUNA 2 */}
                 <div className={`w-full md:w-1/3 border-r border-slate-200 bg-slate-50/50 flex flex-col overflow-hidden h-full transition-all ${!activeDisc ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
                     <div className="shrink-0 p-3 bg-slate-100 border-b font-black text-[10px] text-slate-500 uppercase tracking-widest flex justify-between">
                         <span>2. Temas {activeDisc ? `de ${activeDisc}` : ''}</span>
@@ -473,7 +573,6 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* COLUNA 3 */}
                 <div className={`w-full md:w-1/3 bg-[#FBFBFB] flex flex-col overflow-hidden h-full transition-all ${!activeTema ? 'opacity-50 pointer-events-none' : ''}`}>
                     <div className="shrink-0 p-3 bg-slate-100 border-b font-black text-[10px] text-slate-500 uppercase tracking-widest">
                         3. Subtemas
@@ -497,7 +596,6 @@ export default function App() {
 
               </div>
 
-              {/* RODAPÉ ABSOLUTO */}
               <div className="absolute bottom-0 left-0 w-full h-[70px] bg-white border-t border-slate-200 px-6 flex justify-between items-center shadow-[0_-4px_20px_rgba(0,0,0,0.05)] z-50">
                 <div className="flex items-center gap-6">
                     <div className="flex items-baseline gap-2">
@@ -511,7 +609,7 @@ export default function App() {
                 </div>
                 
                 <button 
-                    onClick={() => { if(selectedDiscs.length > 0) { buscarQuestoes(); setViewMode('feed'); } else { alert("Selecione pelo menos uma disciplina."); }}}
+                    onClick={() => { if(selectedDiscs.length > 0) { buscarQuestoes(0); setViewMode('feed'); } else { alert("Selecione pelo menos uma disciplina."); }}}
                     className={`h-10 px-6 rounded-full font-black uppercase text-[10px] tracking-wide transition-all flex items-center gap-2 ${selectedDiscs.length > 0 ? 'bg-[#00a884] text-white hover:scale-105 shadow-lg shadow-[#00a884]/30' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
                 >
                     Gerar Caderno <Play size={12} fill="currentColor"/>
@@ -522,30 +620,57 @@ export default function App() {
           )}
 
           {viewMode === 'feed' && !abaAdmin && (
-            <div className="max-w-3xl mx-auto space-y-8 animate-in slide-in-from-right-4 p-4 md:p-12">
+            <div className="max-w-3xl mx-auto p-4 md:p-12 animate-in slide-in-from-right-4">
               {!isAssinante && !isAdmin ? (
                 <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-2xl text-center mt-8"><div className="flex justify-center mb-6"><div className="bg-[#00a884]/10 p-4 rounded-full"><CreditCard className="text-[#00a884]" size={40} /></div></div><h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tighter">Escolha seu Plano</h2><p className="text-slate-600 mb-12 leading-relaxed font-bold text-sm max-w-xl mx-auto">Libere acesso. Aceitamos Cartão de Crédito (até 12x), PIX e Boleto via Mercado Pago.</p><div className="grid md:grid-cols-3 gap-6"><div className="p-8 border-2 border-slate-100 rounded-3xl text-left bg-white hover:border-[#00a884]/30 hover:shadow-xl transition-all"><h3 className="font-black text-slate-800 text-lg">Mensal</h3><div className="mt-4 mb-6"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">24,90</span><span className="text-xs font-bold text-slate-400">/mês</span></div><button onClick={() => window.open('https://mpago.li/2yjdqU2', '_blank')} className="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#00a884] transition-colors">Assinar</button></div><div className="p-8 border-2 border-slate-100 rounded-3xl text-left bg-white hover:border-[#00a884]/30 hover:shadow-xl transition-all relative"><h3 className="font-black text-slate-800 text-lg">Semestral</h3><div className="mt-4 mb-2"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">119</span></div><p className="text-[11px] font-black text-[#00a884] mb-6">👉 R$ 19,80/mês</p><button onClick={() => window.open('LINK_SEMESTRAL', '_blank')} className="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#00a884] transition-colors">Indisponível!</button></div><div className="p-8 border-2 border-[#00a884] rounded-3xl text-left bg-[#00a884]/5 relative shadow-lg shadow-[#00a884]/10"><div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#00a884] text-white text-[9px] px-3 py-1 rounded-full font-black uppercase tracking-widest shadow-md">Recomendado</div><h3 className="font-black text-slate-800 text-lg">Anual</h3><div className="mt-4 mb-2"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">199</span></div><p className="text-[11px] font-black text-[#00a884] mb-6">👉 R$ 16,60/mês</p><button onClick={() => window.open('LINK_ANUAL', '_blank')} className="w-full bg-[#00a884] text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#008f6f] transition-colors">Indisponível</button></div></div><p className="mt-10 text-[11px] font-bold text-slate-400">Pagou? <button onClick={() => window.open('https://wa.me/SEU_ZAP', '_blank')} className="text-[#00a884] underline">Envie o comprovante</button> para liberação imediata.</p></div>
               ) : (
                 <div className="space-y-8">
+                  {/* Stats e Título */}
                   <div className="grid grid-cols-2 gap-4"><div className="bg-white p-5 rounded-xl border border-slate-200 flex items-center gap-4 shadow-sm"><div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center text-slate-600"><BarChart3 size={20}/></div><div><span className="block text-xl font-black text-slate-900">{stats.totalSemana}</span><span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Resolvidas</span></div></div><div className="bg-[#00a884] p-5 rounded-xl flex items-center gap-4 shadow-lg shadow-[#00a884]/20 text-white"><div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center"><Target size={20}/></div><div><span className="block text-xl font-black">{stats.taxa}%</span><span className="text-[9px] font-black opacity-80 uppercase tracking-widest">Taxa de Acerto</span></div></div></div>
                   <div className="flex justify-between items-center px-2"><h3 className="font-black text-slate-700 text-sm uppercase tracking-wide flex items-center gap-2"><List size={16} className="text-[#00a884]"/> Caderno de Questões</h3><span className="bg-white text-slate-600 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border border-slate-200 shadow-sm">{questoes.length} Itens</span></div>
-                  {questoes.length > 0 ? questoes.map((q, idx) => { const respondida = respostas[q.id] !== undefined; return (
-                    <div key={q.id} className="bg-white border-l-4 border-[#00a884] border-t border-b border-r border-slate-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                        <div className="px-6 py-3 bg-slate-50/50 flex justify-between items-center border-b border-slate-200 font-black text-slate-700 text-[10px] uppercase">
-                          <div className="flex items-center gap-2">
-                             <span>Questão {idx + 1}</span>
-                             <span className="text-slate-300 hidden sm:inline">|</span>
-                             <div className="flex items-center gap-1.5 opacity-60">
-                                {q.origem === 'med53' ? <span className="text-[#00a884] flex items-center gap-1"><Star size={10} fill="currentColor"/> MED53</span> : <span className="text-indigo-600 flex items-center gap-1"><Archive size={10}/> BANCA</span>}
-                                <span className="text-slate-300">•</span>
-                                <span className="truncate max-w-[150px] sm:max-w-none">{q.disciplina} › {q.tema}</span>
-                             </div>
-                          </div>
-                          {respondida && (<span className={respostas[q.id] === q.resposta_correta ? 'text-[#00a884]' : 'text-rose-600'}>{respostas[q.id] === q.resposta_correta ? '✓ ACERTOU' : '✕ ERROU'}</span>)}
+                  
+                  {/* Lista de Questões */}
+                  {questoes.length > 0 ? questionsList(questoes, respostas, editingId, editForm, cancelEditing, handleInlineSave, startEditing, handleInlineDelete, setEditForm, setRespostas, user, carregarStats, atualizarStreak, explicas, setExplicas, isAdmin) : <div className="text-center py-28 bg-white border border-dashed border-slate-300 rounded-2xl font-bold text-slate-600 italic">Nenhuma questão encontrada nesta página.</div>}
+
+                  {/* RODAPÉ DE PAGINAÇÃO (SOLTO NO FINAL, NÃO FIXO) */}
+                  {questoes.length > 0 && (
+                    <div className="mt-12 pt-8 border-t border-slate-200 flex justify-center items-center gap-6 pb-8">
+                        <button 
+                          onClick={() => { 
+                            buscarQuestoes(page - 1); 
+                            window.scrollTo({ top: 0, behavior: 'smooth' }); // Sobe a tela ao trocar
+                          }} 
+                          disabled={page === 0}
+                          className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        >
+                          <ChevronLeft size={16}/> Anterior
+                        </button>
+                        
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Página {page + 1}</span>
+                          <div className="h-4 w-px bg-slate-300"></div>
+                          <select 
+                            value={itemsPerPage} 
+                            onChange={(e) => { setItemsPerPage(Number(e.target.value)); setPage(0); }}
+                            className="bg-transparent text-slate-600 font-bold text-xs outline-none cursor-pointer hover:text-[#00a884]"
+                          >
+                              <option value={25}>25 itens</option>
+                              <option value={50}>50 itens</option>
+                          </select>
                         </div>
-                        <div className="p-8"><p className="text-[15.5px] font-bold text-slate-800 leading-relaxed mb-8">{q.enunciado}</p>{q.imagem_url && <div className="mb-8 p-1.5 bg-slate-50 border border-slate-200 rounded-lg shadow-inner"><img src={q.imagem_url} alt="Referência" className="w-full max-h-80 object-contain mx-auto rounded-md" /></div>}<div className="space-y-2.5">{q.opcoes.map((op: string, i: number) => { let style = "border-slate-200 bg-[#F9FAFB] text-slate-700 font-bold"; if (respondida) { if (i === q.resposta_correta) style = "bg-[#ECFDF5] border-[#00a884] text-[#065F46]"; else if (respostas[q.id] === i) style = "bg-[#FFF1F2] border-rose-200 text-rose-800"; else style = "opacity-40 grayscale border-transparent"; } return (<button key={i} disabled={respondida} onClick={async () => { setRespostas(p => ({...p, [q.id]: i})); await supabase.from('historico_questoes').insert([{ user_id: user.id, questao_id: q.id, acertou: i === q.resposta_correta }]); await carregarStats(user.id); }} className={`w-full p-4 border rounded-xl text-left flex items-center gap-4 transition-all text-[13.5px] ${style}`}><span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${respondida && i === q.resposta_correta ? 'bg-[#00a884] text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{String.fromCharCode(65+i)}</span>{op}</button>); })}</div>{respondida && (<div className="mt-8 pt-6 border-t border-slate-200 flex flex-col items-end"><button onClick={() => setExplicas(p => ({...p, [q.id]: !p[q.id]}))} className="text-[#00a884] font-black text-[10px] uppercase flex items-center gap-2 hover:underline transition-all"><Eye size={16}/> {explicas[q.id] ? 'Fechar' : 'Ver Explicação'}</button>{explicas[q.id] && q.justificativa && (<div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner"><div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>{q.justificativa}</div>)}</div>)}</div>
+
+                        <button 
+                          onClick={() => {
+                            buscarQuestoes(page + 1);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }} 
+                          disabled={!hasMore}
+                          className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs bg-[#00a884] text-white hover:bg-[#008f6f] shadow-lg shadow-[#00a884]/20 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed transition-all"
+                        >
+                          Próxima <ChevronRight size={16}/>
+                        </button>
                     </div>
-                  ); }) : <div className="text-center py-28 bg-white border border-dashed border-slate-300 rounded-2xl font-bold text-slate-600 italic">Nenhuma questão encontrada para os filtros selecionados.</div>}
+                  )}
                 </div>
               )}
             </div>
@@ -593,7 +718,13 @@ export default function App() {
           {abaAdmin === 'questoes' && isAdmin && (
             <form onSubmit={async (e: any) => { 
                 e.preventDefault(); 
-                await supabase.from('questoes').insert([{ enunciado: fEnun, opcoes: fOps, resposta_correta: fCorr, disciplina: fDisc, tema: fTema, subtema: fSubtema || null, justificativa: fJust, imagem_url: fImg || null, ciclo: 'Clínico', origem: fOrigemCadastro }]); 
+                // SALVA COM AS DUAS IMAGENS
+                await supabase.from('questoes').insert([{ 
+                    enunciado: fEnun, opcoes: fOps, resposta_correta: fCorr, 
+                    disciplina: fDisc, tema: fTema, subtema: fSubtema || null, 
+                    justificativa: fJust, imagem_url: fImg || null, imagem_justificativa: fImgJust || null,
+                    ciclo: 'Clínico', origem: fOrigemCadastro 
+                }]); 
                 setFEnun(''); await buscarDadosEstruturais(); alert("Salvo!"); 
             }} className="max-w-3xl mx-auto p-12 bg-white border border-slate-200 rounded-xl space-y-4 shadow-sm animate-in fade-in">
                 <h3 className="text-[10px] font-black text-[#00a884] uppercase tracking-widest border-b pb-2">Nova Questão</h3>
@@ -601,11 +732,173 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-3"><select className="p-3 border border-slate-300 rounded-md text-xs font-bold text-slate-600" onChange={e => setFOrigemCadastro(e.target.value)} value={fOrigemCadastro}><option value="med53">⭐ Original MED53</option><option value="antigas">🏛️ Banca / Antiga</option></select><input placeholder="Disciplina" className="p-3 border border-slate-300 rounded-md text-xs font-bold" onChange={e => setFDisc(e.target.value)} required /></div>
                 <div className="grid grid-cols-2 gap-3"><input placeholder="Tema" className="p-3 border border-slate-300 rounded-md text-xs font-bold" onChange={e => setFTema(e.target.value)} required /><input placeholder="Subtema (Opcional)" className="p-3 border border-slate-300 rounded-md text-xs font-bold" onChange={e => setFSubtema(e.target.value)} /></div>
                 <div className="grid grid-cols-2 gap-2">{fOps.map((op, i) => <input key={i} placeholder={`Opção ${String.fromCharCode(65+i)}`} className="p-2 border border-slate-300 rounded-md text-xs" onChange={e => {const n=[...fOps]; n[i]=e.target.value; setFOps(n);}} required />)}</div>
-                <div className="grid grid-cols-2 gap-3"><select className="p-3 border border-slate-300 rounded-md text-xs font-bold" onChange={e => setFCorr(Number(e.target.value))}><option value={0}>Gabarito A</option><option value={1}>Gabarito B</option><option value={2}>Gabarito C</option><option value={3}>Gabarito D</option></select><input placeholder="Link da Imagem" className="p-3 border border-slate-300 rounded-md text-xs" onChange={e => setFImg(e.target.value)} /></div><textarea placeholder="Justificativa" className="w-full p-3 border border-slate-300 rounded-md text-xs italic" onChange={e => setFJust(e.target.value)} /><button className="w-full bg-[#00a884] text-white py-3 rounded-md font-black uppercase text-[10px]">Salvar</button>
+                <div className="grid grid-cols-2 gap-3"><select className="p-3 border border-slate-300 rounded-md text-xs font-bold" onChange={e => setFCorr(Number(e.target.value))}><option value={0}>Gabarito A</option><option value={1}>Gabarito B</option><option value={2}>Gabarito C</option><option value={3}>Gabarito D</option></select></div>
+                
+                {/* CAMPOS DE IMAGEM SEPARADOS */}
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded border border-slate-200">
+                    <input placeholder="URL da Imagem do ENUNCIADO" className="p-2 border border-slate-300 rounded-md text-xs" onChange={e => setFImg(e.target.value)} />
+                    <input placeholder="URL da Imagem da EXPLICAÇÃO" className="p-2 border border-slate-300 rounded-md text-xs" onChange={e => setFImgJust(e.target.value)} />
+                </div>
+                
+                <textarea placeholder="Justificativa" className="w-full p-3 border border-slate-300 rounded-md text-xs italic" onChange={e => setFJust(e.target.value)} /><button className="w-full bg-[#00a884] text-white py-3 rounded-md font-black uppercase text-[10px]">Salvar</button>
             </form>
           )}
         </main>
       </div>
     </div>
   );
+}
+
+// Sub-componente extraído para limpar o render principal
+function questionsList(questoes: any[], respostas: any, editingId: any, editForm: any, cancelEditing: any, handleInlineSave: any, startEditing: any, handleInlineDelete: any, setEditForm: any, setRespostas: any, user: any, carregarStats: any, atualizarStreak: any, explicas: any, setExplicas: any, isAdmin: boolean) {
+    return questoes.map((q, idx) => { 
+        const respondida = respostas[q.id] !== undefined;
+        const isEditing = editingId === q.id;
+
+        return (
+          <div key={q.id} className={`bg-white border-l-4 ${isEditing ? 'border-orange-500 ring-2 ring-orange-200' : 'border-[#00a884]'} border-t border-b border-r border-slate-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow mb-8`}>
+            
+            {isEditing ? (
+              <div className="p-6 bg-orange-50 space-y-4 animate-in fade-in">
+                <div className="flex justify-between items-center mb-4 border-b border-orange-200 pb-2">
+                  <span className="font-black text-orange-600 uppercase text-xs tracking-widest">Editando Questão #{q.id}</span>
+                  <button onClick={cancelEditing} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
+                </div>
+                
+                <textarea 
+                  value={editForm.enunciado} 
+                  onChange={e => setEditForm({...editForm, enunciado: e.target.value})}
+                  className="w-full p-3 border border-orange-200 rounded bg-white text-sm font-bold text-slate-700"
+                  placeholder="Enunciado da questão..."
+                  rows={4}
+                />
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {editForm.opcoes.map((op: string, i: number) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className={`font-black text-xs ${i === editForm.resposta_correta ? 'text-green-600' : 'text-slate-400'}`}>{String.fromCharCode(65+i)}</span>
+                      <input 
+                        value={op}
+                        onChange={e => {
+                          const novasOps = [...editForm.opcoes];
+                          novasOps[i] = e.target.value;
+                          setEditForm({...editForm, opcoes: novasOps});
+                        }}
+                        className={`w-full p-2 border rounded text-xs ${i === editForm.resposta_correta ? 'border-green-400 bg-green-50' : 'border-slate-300'}`}
+                      />
+                      <input 
+                        type="radio" 
+                        name={`gabarito-${q.id}`} 
+                        checked={i === editForm.resposta_correta} 
+                        onChange={() => setEditForm({...editForm, resposta_correta: i})}
+                        className="accent-green-600 cursor-pointer"
+                        title="Marcar como correta"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={editForm.disciplina} onChange={e => setEditForm({...editForm, disciplina: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Disciplina" />
+                  <input value={editForm.tema} onChange={e => setEditForm({...editForm, tema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Tema" />
+                  <input value={editForm.subtema || ''} onChange={e => setEditForm({...editForm, subtema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Subtema" />
+                </div>
+
+                <textarea 
+                  value={editForm.justificativa || ''} 
+                  onChange={e => setEditForm({...editForm, justificativa: e.target.value})}
+                  className="w-full p-3 border border-slate-300 rounded bg-white text-xs italic text-slate-600"
+                  placeholder="Comentário/Justificativa..."
+                  rows={3}
+                />
+                
+                <div className="grid grid-cols-2 gap-2">
+                    <input value={editForm.imagem_url || ''} onChange={e => setEditForm({...editForm, imagem_url: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem ENUNCIADO" />
+                    <input value={editForm.imagem_justificativa || ''} onChange={e => setEditForm({...editForm, imagem_justificativa: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem EXPLICAÇÃO" />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button onClick={handleInlineSave} className="flex-1 bg-green-600 text-white py-2 rounded font-black text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2"><Save size={14}/> Salvar Alterações</button>
+                  <button onClick={cancelEditing} className="px-4 py-2 border border-slate-300 rounded text-slate-500 font-bold text-xs uppercase hover:bg-slate-50">Cancelar</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="px-6 py-3 bg-slate-50/50 flex justify-between items-center border-b border-slate-200 font-black text-slate-700 text-[10px] uppercase">
+                  <div className="flex items-center gap-2">
+                    <span>Questão {idx + 1}</span>
+                    <span className="text-slate-300 hidden sm:inline">|</span>
+                    <div className="flex items-center gap-1.5 opacity-60">
+                      {q.origem === 'med53' ? <span className="text-[#00a884] flex items-center gap-1"><Star size={10} fill="currentColor"/> MED53</span> : <span className="text-indigo-600 flex items-center gap-1"><Archive size={10}/> BANCA</span>}
+                      <span className="text-slate-300">•</span>
+                      <span className="truncate max-w-[150px] sm:max-w-none">{q.disciplina} › {q.tema}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {respondida && (<span className={respostas[q.id] === q.resposta_correta ? 'text-[#00a884]' : 'text-rose-600'}>{respostas[q.id] === q.resposta_correta ? '✓ ACERTOU' : '✕ ERROU'}</span>)}
+                    {isAdmin && (
+                      <div className="flex items-center gap-1 ml-2 border-l pl-3 border-slate-200">
+                         <button onClick={() => startEditing(q)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"><Edit size={14}/></button>
+                         <button onClick={() => handleInlineDelete(q.id)} title="Apagar" className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"><Trash2 size={14}/></button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="p-8">
+                    <p className="text-[15.5px] font-bold text-slate-800 leading-relaxed mb-8">{q.enunciado}</p>
+                    
+                    {/* IMAGEM DO ENUNCIADO (Sempre visível se existir) */}
+                    {q.imagem_url && (
+                        <div className="mb-8 p-1.5 bg-slate-50 border border-slate-200 rounded-lg shadow-inner">
+                            <img src={q.imagem_url} alt="Referência" className="w-full max-h-80 object-contain mx-auto rounded-md" />
+                        </div>
+                    )}
+                    
+                    <div className="space-y-2.5">
+                        {q.opcoes.map((op: string, i: number) => { 
+                            let style = "border-slate-200 bg-[#F9FAFB] text-slate-700 font-bold"; 
+                            if (respondida) { 
+                              if (i === q.resposta_correta) style = "bg-[#ECFDF5] border-[#00a884] text-[#065F46]"; 
+                              else if (respostas[q.id] === i) style = "bg-[#FFF1F2] border-rose-200 text-rose-800"; 
+                              else style = "opacity-40 grayscale border-transparent"; 
+                            } 
+                            return (
+                                <button key={i} disabled={respondida} 
+                                    onClick={async () => { 
+                                        setRespostas((p: any) => ({...p, [q.id]: i})); 
+                                        // Salva histórico E atualiza o Streak
+                                        await supabase.from('historico_questoes').insert([{ user_id: user.id, questao_id: q.id, acertou: i === q.resposta_correta }]); 
+                                        await carregarStats(user.id); 
+                                        await atualizarStreak(user.id); // <--- ATUALIZA O STREAK AQUI
+                                    }} 
+                                    className={`w-full p-4 border rounded-xl text-left flex items-center gap-4 transition-all text-[13.5px] ${style}`}>
+                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${respondida && i === q.resposta_correta ? 'bg-[#00a884] text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{String.fromCharCode(65+i)}</span>{op}
+                                </button>
+                            ); 
+                        })}
+                    </div>
+                    
+                    {respondida && (
+                      <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col items-end">
+                        <button onClick={() => setExplicas((p: any) => ({...p, [q.id]: !p[q.id]}))} className="text-[#00a884] font-black text-[10px] uppercase flex items-center gap-2 hover:underline transition-all"><Eye size={16}/> {explicas[q.id] ? 'Fechar' : 'Ver Explicação'}</button>
+                        {explicas[q.id] && (
+                            <div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner">
+                                <div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>
+                                {q.justificativa}
+                                {/* IMAGEM DA EXPLICAÇÃO (Nova!) */}
+                                {q.imagem_justificativa && (
+                                    <div className="mt-4 pt-4 border-t border-slate-200">
+                                        <img src={q.imagem_justificativa} alt="Explicação Visual" className="w-full max-h-60 object-contain mx-auto rounded-md opacity-90" />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                      </div>
+                    )}
+                </div>
+              </>
+            )}
+          </div>
+        ); 
+    });
 }
