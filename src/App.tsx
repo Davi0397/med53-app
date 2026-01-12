@@ -5,7 +5,7 @@ import {
   Menu, X, Lock, Star, Target, ArrowLeft, BarChart3, Mail, List, 
   Save, CreditCard, AlertTriangle, Loader2, Archive, Play, 
   ChevronRight, ChevronLeft, Layout, FolderOpen, Folder, Clock,
-  Trash2, Edit, Flame
+  Trash2, Edit, Flame, Flag, MessageSquare // <--- NOVOS ÍCONES
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO ---
@@ -13,28 +13,20 @@ const SUPABASE_URL = 'https://jiewnyqkpbxvdscmnzhj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImppZXdueXFrcGJ4dmRzY21uemhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwOTU4MjMsImV4cCI6MjA4MjY3MTgyM30.jqEe1E42mVgSmzUnUjPtD_JaruUvj6vMe01Sx8rLT1Y';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: true, storage: window.sessionStorage, autoRefreshToken: true, detectSessionInUrl: true }
+  auth: { persistSession: true, storage: window.localStorage, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
-// --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO ---
+// --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO (FISHER-YATES) ---
 function embaralharQuestoes(listaQuestoes: any[]) {
   return listaQuestoes.map(q => {
-    // Se não tiver opções (ex: discursiva) ou admin estiver editando, não mexe
     if (!q.opcoes || q.opcoes.length === 0) return q;
-
-    // 1. Cria um array de objetos para rastrear qual é a correta
     const opcoesMapeadas = q.opcoes.map((texto: string, index: number) => ({
-      texto,
-      ehCorreta: index === q.resposta_correta
+      texto, ehCorreta: index === q.resposta_correta
     }));
-
-    // 2. Algoritmo de embaralhamento (Fisher-Yates)
     for (let i = opcoesMapeadas.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [opcoesMapeadas[i], opcoesMapeadas[j]] = [opcoesMapeadas[j], opcoesMapeadas[i]];
     }
-
-    // 3. Reconstrói a questão com a nova ordem e o novo índice da resposta certa
     return {
       ...q,
       opcoes: opcoesMapeadas.map((o: any) => o.texto),
@@ -54,6 +46,9 @@ export default function App() {
 
   // Streak (Foguinho)
   const [streak, setStreak] = useState(0);
+
+  // Reporte de Erro
+  const [reportingId, setReportingId] = useState<number | null>(null);
 
   // Auth
   const [isSignUp, setIsSignUp] = useState(false);
@@ -156,26 +151,61 @@ export default function App() {
     setLoading(false);
   };
 
-  // --- INICIALIZAÇÃO ---
+  // --- FUNÇÃO DE REPORTAR ERRO ---
+  const handleReportIssue = async (qId: number, motivo: string) => {
+    if(!user) return;
+    try {
+        await supabase.from('reportes').insert([{
+            user_id: user.id,
+            questao_id: qId,
+            motivo: motivo
+        }]);
+        alert("Obrigado! Vamos analisar o erro.");
+        setReportingId(null); // Fecha o menu
+    } catch (e) {
+        alert("Erro ao enviar reporte.");
+    }
+  };
+
+  // --- INICIALIZAÇÃO CORRIGIDA ---
   useEffect(() => {
-    const checkSession = async () => {
+    let mounted = true;
+
+    const initSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error || !session) {
+          if (mounted) resetEstadoTotal();
+          return;
+        }
+
         if (session?.user) {
+          // Atualiza sessão no banco, mas não bloqueia se falhar
           await registrarSessaoUnica(session.user.id, session.access_token);
-          await inicializar(session.user, session.access_token);
-        } else { resetEstadoTotal(); }
-      } catch { resetEstadoTotal(); }
+          if (mounted) await inicializar(session.user, session.access_token);
+        }
+      } catch (err) {
+        console.error("Erro na sessão:", err);
+        if (mounted) resetEstadoTotal();
+      }
     };
-    checkSession();
+
+    initSession();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') resetEstadoTotal();
-      else if (session?.user && event === 'SIGNED_IN') {
+      if (event === 'SIGNED_OUT') {
+        resetEstadoTotal();
+      } else if (session?.user && event === 'SIGNED_IN') {
         await registrarSessaoUnica(session.user.id, session.access_token);
         inicializar(session.user, session.access_token);
       }
     });
-    return () => subscription.unsubscribe();
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const contagemPrevia = useMemo(() => {
@@ -208,16 +238,23 @@ export default function App() {
   };
 
   async function registrarSessaoUnica(uid: string, token: string) {
-    await supabase.from('perfis').update({ last_session_id: token }).eq('id', uid);
+    try {
+        await supabase.from('perfis').update({ last_session_id: token }).eq('id', uid);
+    } catch (e) { console.error("Erro ao registrar sessão:", e); }
   }
 
   async function inicializar(u: any, token: string) {
     try {
-      const { data: perfil } = await supabase.from('perfis').select('*').eq('id', u.id).maybeSingle();
+      const { data: perfil, error } = await supabase.from('perfis').select('*').eq('id', u.id).maybeSingle();
       
+      if (error) throw error;
+
       if (perfil?.last_session_id && perfil.last_session_id !== token) {
-        setSessaoInvalida(true); await supabase.auth.signOut(); return;
+        setSessaoInvalida(true); 
+        await supabase.auth.signOut(); 
+        return;
       }
+
       const { data: ass } = await supabase.from('assinaturas').select('*').eq('user_id', u.id).maybeSingle();
       
       setUser(u); 
@@ -230,7 +267,9 @@ export default function App() {
       await buscarDadosEstruturais();
       await carregarStats(u.id);
       if (perfil?.is_admin) carregarListaUsuarios();
-    } catch { handleLogout(true); } finally { setLoading(false); }
+    } catch (err) { 
+        console.error("Erro na inicialização:", err);
+    } finally { setLoading(false); }
   }
 
   // --- LÓGICA DO STREAK (FOGUINHO) ---
@@ -239,14 +278,12 @@ export default function App() {
     const { data: perfil } = await supabase.from('perfis').select('streak_atual, ultima_atividade').eq('id', uid).single();
     
     if (perfil) {
-        // Se a última atividade não foi hoje
         if (perfil.ultima_atividade !== hoje) {
             const ontem = new Date();
             ontem.setDate(ontem.getDate() - 1);
             const dataOntem = ontem.toISOString().split('T')[0];
 
             let novoStreak = 1;
-            // Se estudou ontem, aumenta o streak. Se não, reseta para 1.
             if (perfil.ultima_atividade === dataOntem) {
                 novoStreak = (perfil.streak_atual || 0) + 1;
             }
@@ -317,7 +354,6 @@ export default function App() {
     });
   }, [filtroMapa]); 
 
-  // --- BUSCA COM PAGINAÇÃO ---
   // --- BUSCA COM PAGINAÇÃO E EMBARALHAMENTO ---
   async function buscarQuestoes(novaPagina = 0) {
     if (!user) return;
@@ -343,7 +379,6 @@ export default function App() {
       console.error('Erro:', error);
       setQuestoes([]);
     } else {
-      // 1. Filtragem de subtemas no cliente
       const filtradas = (data || []).filter(item => {
           if (item.subtema) {
               return selectedSubtemas.some(selected => 
@@ -352,19 +387,15 @@ export default function App() {
           }
           return true;
       });
-
-      // 2. APLICAR O EMBARALHAMENTO AQUI
-      // Se for admin, talvez você não queira embaralhar para editar mais fácil? 
-      // Se quiser que admin veja original, use: const finais = isAdmin ? filtradas : embaralharQuestoes(filtradas);
-      // Mas para garantir teste real, recomendo embaralhar para todos:
+      // Aplica embaralhamento para alunos
       const finais = embaralharQuestoes(filtradas);
-
       setQuestoes(finais);
       setHasMore(count ? (inicio + itemsPerPage) < count : false);
     }
     setLoading(false);
   }
 
+  // --- FUNÇÕES DE SELEÇÃO DE FILTROS ---
   const handleSelectDisc = (disc: string, checked: boolean) => {
     const newDiscs = checked ? [...selectedDiscs, disc] : selectedDiscs.filter(d => d !== disc);
     setSelectedDiscs(newDiscs);
@@ -437,9 +468,17 @@ export default function App() {
   };
 
   const handleLogout = async (forced = false) => {
+    resetEstadoTotal();
     if (!forced) setLoading(true);
-    try { await supabase.auth.signOut(); } catch {} 
-    finally { localStorage.clear(); sessionStorage.clear(); resetEstadoTotal(); window.location.href = "/"; }
+    try { 
+        await supabase.auth.signOut(); 
+    } catch (error) {
+        console.error("Erro ao sair:", error);
+    } finally { 
+        localStorage.clear(); 
+        sessionStorage.clear(); 
+        window.location.href = "/"; 
+    }
   };
 
   if (sessaoInvalida) return <div className="min-h-screen bg-rose-50 flex items-center justify-center p-6"><div className="bg-white p-8 rounded-2xl shadow-xl text-center"><AlertTriangle className="mx-auto text-rose-600 mb-4" size={32} /><h2 className="font-black text-slate-900 mb-2">Conexão Interrompida</h2><p className="text-slate-600 text-sm mb-6">Acesso detectado em outro dispositivo.</p><button onClick={() => window.location.reload()} className="bg-rose-600 text-white py-3 px-6 rounded-xl font-bold uppercase text-xs">Reconectar</button></div></div>;
@@ -665,7 +704,7 @@ export default function App() {
                   <div className="flex justify-between items-center px-2"><h3 className="font-black text-slate-700 text-sm uppercase tracking-wide flex items-center gap-2"><List size={16} className="text-[#00a884]"/> Caderno de Questões</h3><span className="bg-white text-slate-600 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border border-slate-200 shadow-sm">{questoes.length} Itens</span></div>
                   
                   {/* Lista de Questões */}
-                  {questoes.length > 0 ? questionsList(questoes, respostas, editingId, editForm, cancelEditing, handleInlineSave, startEditing, handleInlineDelete, setEditForm, setRespostas, user, carregarStats, atualizarStreak, explicas, setExplicas, isAdmin) : <div className="text-center py-28 bg-white border border-dashed border-slate-300 rounded-2xl font-bold text-slate-600 italic">Nenhuma questão encontrada nesta página.</div>}
+                  {questoes.length > 0 ? questionsList(questoes, respostas, editingId, editForm, cancelEditing, handleInlineSave, startEditing, handleInlineDelete, setEditForm, setRespostas, user, carregarStats, atualizarStreak, explicas, setExplicas, isAdmin, handleReportIssue, reportingId, setReportingId) : <div className="text-center py-28 bg-white border border-dashed border-slate-300 rounded-2xl font-bold text-slate-600 italic">Nenhuma questão encontrada nesta página.</div>}
 
                   {/* RODAPÉ DE PAGINAÇÃO (SOLTO NO FINAL, NÃO FIXO) */}
                   {questoes.length > 0 && (
@@ -785,10 +824,11 @@ export default function App() {
 }
 
 // Sub-componente extraído para limpar o render principal
-function questionsList(questoes: any[], respostas: any, editingId: any, editForm: any, cancelEditing: any, handleInlineSave: any, startEditing: any, handleInlineDelete: any, setEditForm: any, setRespostas: any, user: any, carregarStats: any, atualizarStreak: any, explicas: any, setExplicas: any, isAdmin: boolean) {
+function questionsList(questoes: any[], respostas: any, editingId: any, editForm: any, cancelEditing: any, handleInlineSave: any, startEditing: any, handleInlineDelete: any, setEditForm: any, setRespostas: any, user: any, carregarStats: any, atualizarStreak: any, explicas: any, setExplicas: any, isAdmin: boolean, handleReportIssue: any, reportingId: any, setReportingId: any) {
     return questoes.map((q, idx) => { 
         const respondida = respostas[q.id] !== undefined;
         const isEditing = editingId === q.id;
+        const isReporting = reportingId === q.id;
 
         return (
           <div key={q.id} className={`bg-white border-l-4 ${isEditing ? 'border-orange-500 ring-2 ring-orange-200' : 'border-[#00a884]'} border-t border-b border-r border-slate-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow mb-8`}>
@@ -915,9 +955,38 @@ function questionsList(questoes: any[], respostas: any, editingId: any, editForm
                     
                     {respondida && (
                       <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col items-end">
-                        <button onClick={() => setExplicas((p: any) => ({...p, [q.id]: !p[q.id]}))} className="text-[#00a884] font-black text-[10px] uppercase flex items-center gap-2 hover:underline transition-all"><Eye size={16}/> {explicas[q.id] ? 'Fechar' : 'Ver Explicação'}</button>
+                        <div className="flex gap-4 items-center">
+                            {/* BOTÃO DE REPORTAR */}
+                            <button 
+                                onClick={() => setReportingId(isReporting ? null : q.id)} 
+                                className="text-slate-400 font-bold text-[10px] uppercase flex items-center gap-1 hover:text-rose-500 transition-colors"
+                            >
+                                <Flag size={12}/> Reportar Erro
+                            </button>
+
+                            <button onClick={() => setExplicas((p: any) => ({...p, [q.id]: !p[q.id]}))} className="text-[#00a884] font-black text-[10px] uppercase flex items-center gap-2 hover:underline transition-all"><Eye size={16}/> {explicas[q.id] ? 'Fechar' : 'Ver Explicação'}</button>
+                        </div>
+
+                        {/* ÁREA DE REPORTE */}
+                        {isReporting && (
+                            <div className="mt-4 p-4 bg-rose-50 border border-rose-100 rounded-lg w-full animate-in fade-in slide-in-from-top-2">
+                                <span className="block text-xs font-black text-rose-800 mb-3">Qual o problema desta questão?</span>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {['Gabarito Errado', 'Erro de Português', 'Imagem Ruim', 'Outro'].map(motivo => (
+                                        <button 
+                                            key={motivo}
+                                            onClick={() => handleReportIssue(q.id, motivo)}
+                                            className="bg-white border border-rose-200 text-rose-700 py-2 rounded text-[10px] font-bold uppercase hover:bg-rose-600 hover:text-white transition-colors"
+                                        >
+                                            {motivo}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {explicas[q.id] && (
-                            <div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner">
+                            <div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner animate-in fade-in">
                                 <div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>
                                 {q.justificativa}
                                 {/* IMAGEM DA EXPLICAÇÃO (Nova!) */}
