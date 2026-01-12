@@ -16,6 +16,33 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, storage: window.sessionStorage, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
+// --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO ---
+function embaralharQuestoes(listaQuestoes: any[]) {
+  return listaQuestoes.map(q => {
+    // Se não tiver opções (ex: discursiva) ou admin estiver editando, não mexe
+    if (!q.opcoes || q.opcoes.length === 0) return q;
+
+    // 1. Cria um array de objetos para rastrear qual é a correta
+    const opcoesMapeadas = q.opcoes.map((texto: string, index: number) => ({
+      texto,
+      ehCorreta: index === q.resposta_correta
+    }));
+
+    // 2. Algoritmo de embaralhamento (Fisher-Yates)
+    for (let i = opcoesMapeadas.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [opcoesMapeadas[i], opcoesMapeadas[j]] = [opcoesMapeadas[j], opcoesMapeadas[i]];
+    }
+
+    // 3. Reconstrói a questão com a nova ordem e o novo índice da resposta certa
+    return {
+      ...q,
+      opcoes: opcoesMapeadas.map((o: any) => o.texto),
+      resposta_correta: opcoesMapeadas.findIndex((o: any) => o.ehCorreta)
+    };
+  });
+}
+
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -291,6 +318,7 @@ export default function App() {
   }, [filtroMapa]); 
 
   // --- BUSCA COM PAGINAÇÃO ---
+  // --- BUSCA COM PAGINAÇÃO E EMBARALHAMENTO ---
   async function buscarQuestoes(novaPagina = 0) {
     if (!user) return;
     setLoading(true);
@@ -304,7 +332,7 @@ export default function App() {
     if (filterOrigem === 'originais') q = q.eq('origem', 'med53');
     if (filterOrigem === 'antigas') q = q.neq('origem', 'med53');
 
-    // Paginação (Range do Supabase)
+    // Paginação
     const inicio = novaPagina * itemsPerPage;
     const fim = inicio + itemsPerPage - 1;
     q = q.range(inicio, fim);
@@ -315,7 +343,7 @@ export default function App() {
       console.error('Erro:', error);
       setQuestoes([]);
     } else {
-      // Filtragem de subtemas no cliente
+      // 1. Filtragem de subtemas no cliente
       const filtradas = (data || []).filter(item => {
           if (item.subtema) {
               return selectedSubtemas.some(selected => 
@@ -324,7 +352,14 @@ export default function App() {
           }
           return true;
       });
-      setQuestoes(filtradas);
+
+      // 2. APLICAR O EMBARALHAMENTO AQUI
+      // Se for admin, talvez você não queira embaralhar para editar mais fácil? 
+      // Se quiser que admin veja original, use: const finais = isAdmin ? filtradas : embaralharQuestoes(filtradas);
+      // Mas para garantir teste real, recomendo embaralhar para todos:
+      const finais = embaralharQuestoes(filtradas);
+
+      setQuestoes(finais);
       setHasMore(count ? (inicio + itemsPerPage) < count : false);
     }
     setLoading(false);
