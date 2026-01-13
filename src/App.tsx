@@ -5,7 +5,7 @@ import {
   Menu, X, Lock, Star, Target, ArrowLeft, BarChart3, Mail, List, 
   Save, CreditCard, AlertTriangle, Loader2, Archive, Play, 
   ChevronRight, ChevronLeft, Layout, FolderOpen, Folder, Clock,
-  Trash2, Edit, Flame, Flag, AlertOctagon
+  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO ---
@@ -16,25 +16,17 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, storage: window.localStorage, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
-// --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO (FISHER-YATES) ---
+// --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO ---
 function embaralharQuestoes(listaQuestoes: any[]) {
   return listaQuestoes.map(q => {
-    // Se não tiver opções (ex: discursiva) ou admin estiver editando, não mexe
     if (!q.opcoes || q.opcoes.length === 0) return q;
-
-    // 1. Cria um array de objetos para rastrear qual é a correta
     const opcoesMapeadas = q.opcoes.map((texto: string, index: number) => ({
-      texto,
-      ehCorreta: index === q.resposta_correta
+      texto, ehCorreta: index === q.resposta_correta
     }));
-
-    // 2. Algoritmo de embaralhamento
     for (let i = opcoesMapeadas.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [opcoesMapeadas[i], opcoesMapeadas[j]] = [opcoesMapeadas[j], opcoesMapeadas[i]];
     }
-
-    // 3. Reconstrói a questão com a nova ordem e o novo índice da resposta certa
     return {
       ...q,
       opcoes: opcoesMapeadas.map((o: any) => o.texto),
@@ -52,10 +44,10 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'home' | 'feed'>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Streak (Foguinho)
+  // Streak
   const [streak, setStreak] = useState(0);
 
-  // Reporte de Erro (Estado do Modal)
+  // Reporte
   const [reportingId, setReportingId] = useState<number | null>(null);
 
   // Auth
@@ -66,36 +58,32 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState(''); 
 
-  // --- FILTROS ---
+  // Filtros
   const [allData, setAllData] = useState<any[]>([]); 
   const [filtroMapa, setFiltroMapa] = useState<any>({}); 
   const [activeDisc, setActiveDisc] = useState<string | null>(null); 
   const [activeTema, setActiveTema] = useState<string | null>(null); 
-
-  // Seleções
   const [selectedDiscs, setSelectedDiscs] = useState<string[]>([]);
   const [selectedTemas, setSelectedTemas] = useState<string[]>([]);
   const [selectedSubtemas, setSelectedSubtemas] = useState<string[]>([]);
   const [filterOrigem, setFilterOrigem] = useState<'todos' | 'originais' | 'antigas'>('todos');
 
-  // Dados do App & Paginação
+  // Dados
   const [questoes, setQuestoes] = useState<any[]>([]);
   const [respostas, setRespostas] = useState<Record<number, number>>({});
   const [explicas, setExplicas] = useState<Record<number, boolean>>({});
   const [stats, setStats] = useState({ totalSemana: 0, taxa: 0 });
-  
-  // PAGINAÇÃO
   const [page, setPage] = useState(0);
-  const [itemsPerPage, setItemsPerPage] = useState(25); // Padrão 25
+  const [itemsPerPage, setItemsPerPage] = useState(25); 
   const [hasMore, setHasMore] = useState(false);
 
-  // Admin Geral e Reportes
+  // Admin
   const [abaAdmin, setAbaAdmin] = useState<'questoes' | 'usuarios' | 'reportes' | null>(null);
   const [listaUsuarios, setListaUsuarios] = useState<any[]>([]);
-  const [listaReportes, setListaReportes] = useState<any[]>([]); // Lista de reportes do admin
+  const [listaReportes, setListaReportes] = useState<any[]>([]);
   const [datasTemp, setDatasTemp] = useState<Record<string, string>>({});
 
-  // Form Admin (Cadastro Novo)
+  // Form Admin
   const [fEnun, setFEnun] = useState('');
   const [fOps, setFOps] = useState(['', '', '', '']);
   const [fCorr, setFCorr] = useState(0);
@@ -107,134 +95,117 @@ export default function App() {
   const [fImgJust, setFImgJust] = useState(''); 
   const [fOrigemCadastro, setFOrigemCadastro] = useState('med53'); 
 
-  // --- ADMIN IN-LINE (Edição Rápida) ---
+  // Edit
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<any>({});
 
-  const startEditing = (q: any) => {
-    setEditingId(q.id);
-    setEditForm({ ...q }); 
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditForm({});
-  };
+  const startEditing = (q: any) => { setEditingId(q.id); setEditForm({ ...q }); };
+  const cancelEditing = () => { setEditingId(null); setEditForm({}); };
 
   const handleInlineDelete = async (id: number) => {
-    if (!confirm("Tem certeza absoluta que deseja APAGAR esta questão?")) return;
-    
+    if (!confirm("Tem certeza?")) return;
     const { error } = await supabase.from('questoes').delete().eq('id', id);
-    if (error) {
-      alert("Erro ao apagar: " + error.message);
-    } else {
-      setQuestoes(prev => prev.filter(q => q.id !== id));
-      alert("Questão apagada!");
-    }
+    if (error) alert("Erro: " + error.message);
+    else setQuestoes(prev => prev.filter(q => q.id !== id));
   };
 
   const handleInlineSave = async () => {
-    if (!editForm.enunciado || !editForm.disciplina) return alert("Preencha os campos obrigatórios.");
-    
+    if (!editForm.enunciado || !editForm.disciplina) return alert("Preencha campos.");
     setLoading(true);
     const { error } = await supabase.from('questoes').update({
-      enunciado: editForm.enunciado,
-      opcoes: editForm.opcoes,
-      resposta_correta: editForm.resposta_correta,
-      justificativa: editForm.justificativa,
-      disciplina: editForm.disciplina,
-      tema: editForm.tema,
-      subtema: editForm.subtema,
-      imagem_url: editForm.imagem_url,
-      imagem_justificativa: editForm.imagem_justificativa 
+      enunciado: editForm.enunciado, opcoes: editForm.opcoes, resposta_correta: editForm.resposta_correta,
+      justificativa: editForm.justificativa, disciplina: editForm.disciplina, tema: editForm.tema,
+      subtema: editForm.subtema, imagem_url: editForm.imagem_url, imagem_justificativa: editForm.imagem_justificativa 
     }).eq('id', editingId);
-
-    if (error) {
-      alert("Erro ao salvar: " + error.message);
-    } else {
+    if (error) alert("Erro: " + error.message);
+    else {
       setQuestoes(prev => prev.map(q => q.id === editingId ? editForm : q));
-      setEditingId(null);
-      setEditForm({});
-      alert("Questão atualizada com sucesso!");
+      setEditingId(null); setEditForm({});
     }
     setLoading(false);
   };
 
-  // --- FUNÇÃO DO ALUNO: REPORTAR ERRO ---
   const handleReportIssue = async (qId: number, motivo: string) => {
     if(!user) return;
-    try {
-        await supabase.from('reportes').insert([{
-            user_id: user.id,
-            questao_id: qId,
-            motivo: motivo
-        }]);
-        alert("Obrigado! Vamos analisar o erro.");
-        setReportingId(null); // Fecha o menu
-    } catch (e) {
-        alert("Erro ao enviar reporte. Verifique se o SQL da tabela 'reportes' foi criado.");
-    }
+    await supabase.from('reportes').insert([{ user_id: user.id, questao_id: qId, motivo: motivo }]);
+    alert("Obrigado! Reporte enviado."); setReportingId(null);
   };
 
-  // --- FUNÇÕES DE ADMIN: GERENCIAR REPORTES ---
   async function carregarReportes() {
-      // Busca reportes e tenta trazer dados da questão (join)
-      const { data, error } = await supabase
-        .from('reportes')
-        .select('*, questoes(disciplina, tema)')
-        .order('created_at', { ascending: false });
-      
-      if (error) console.error("Erro reportes:", error);
+      const { data } = await supabase.from('reportes').select('*, questoes(disciplina, tema)').order('created_at', { ascending: false });
       setListaReportes(data || []);
   }
 
   async function resolverReporte(qId: number, reporteId: number) {
       setLoading(true);
-      // 1. Busca a questão específica
-      const { data: questao } = await supabase.from('questoes').select('*').eq('id', qId).single();
-      
-      if (questao) {
-          // 2. Coloca ela na tela (sozinha)
-          setQuestoes([questao]);
-          setViewMode('feed'); // Vai para o modo de visualização
-          setAbaAdmin(null);   // Sai do painel admin
-          
-          // 3. Abre o editor automaticamente nela
-          startEditing(questao);
-          
-      } else {
-          alert("Questão não encontrada (pode ter sido apagada).");
-      }
+      const { data } = await supabase.from('questoes').select('*').eq('id', qId).single();
+      if (data) { setQuestoes([data]); setViewMode('feed'); setAbaAdmin(null); startEditing(data); }
       setLoading(false);
   }
 
   async function apagarReporte(id: number) {
-      if(!confirm("Apagar este reporte da lista?")) return;
+      if(!confirm("Apagar reporte?")) return;
       await supabase.from('reportes').delete().eq('id', id);
-      carregarReportes(); // Recarrega a lista
+      carregarReportes();
   }
 
-  // --- INICIALIZAÇÃO E SESSÃO ---
+  // --- HEARTBEAT ANTI-PREJUÍZO (O NOVO GUARDIÃO) 💓 ---
   useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await registrarSessaoUnica(session.user.id, session.access_token);
-          await inicializar(session.user, session.access_token);
-        } else { resetEstadoTotal(); }
-      } catch { resetEstadoTotal(); }
+    if (!user) return; // Só roda se tiver usuário logado
+
+    const checkSessaoAtiva = async () => {
+        // 1. Pega o token atual do navegador
+        const session = await supabase.auth.getSession();
+        const tokenAtual = session.data.session?.access_token;
+        
+        if (!tokenAtual) return;
+
+        // 2. Pergunta ao banco: Qual é o último token válido?
+        const { data } = await supabase.from('perfis').select('last_session_id').eq('id', user.id).single();
+
+        // 3. Se o token do banco for diferente do meu, ALGUÉM ENTROU NO MEU LUGAR
+        if (data?.last_session_id && data.last_session_id !== tokenAtual) {
+            console.warn("Sessão derrubada por novo login.");
+            setSessaoInvalida(true); // Ativa a tela vermelha
+            supabase.auth.signOut(); // Desloga do Supabase
+        }
     };
-    checkSession();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') {
-        resetEstadoTotal();
-      } else if (session?.user && event === 'SIGNED_IN') {
-        await registrarSessaoUnica(session.user.id, session.access_token);
-        inicializar(session.user, session.access_token);
-      }
+
+    // Roda a verificação a cada 5 segundos
+    const intervalo = setInterval(checkSessaoAtiva, 5000);
+    return () => clearInterval(intervalo);
+  }, [user]);
+  // ----------------------------------------------------
+
+  // --- INICIALIZAÇÃO BLINDADA ---
+  useEffect(() => {
+    let mounted = true;
+    const safetyTimer = setTimeout(() => { if (mounted && loading) setLoading(false); }, 8000); // 8s de timeout
+
+    const init = async () => {
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user && mounted) {
+                try { await registrarSessaoUnica(session.user.id, session.access_token); } catch {}
+                await inicializar(session.user, session.access_token);
+            } else if (mounted) {
+                resetEstadoTotal();
+            }
+        } catch { if (mounted) resetEstadoTotal(); }
+    };
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+             registrarSessaoUnica(session.user.id, session.access_token).then(() => {
+                 inicializar(session.user, session.access_token);
+             });
+        } else if (event === 'SIGNED_OUT') {
+            resetEstadoTotal();
+        }
     });
-    return () => subscription.unsubscribe();
+
+    return () => { mounted = false; clearTimeout(safetyTimer); subscription.unsubscribe(); };
   }, []);
 
   const contagemPrevia = useMemo(() => {
@@ -246,14 +217,8 @@ export default function App() {
           const dadosTema = filtroMapa[d].temas[t];
           const listaSubtemas = Object.keys(dadosTema.subtemas);
           if (listaSubtemas.length > 0) {
-            listaSubtemas.forEach(sub => {
-              if (selectedSubtemas.includes(sub)) {
-                total += dadosTema.subtemas[sub];
-              }
-            });
-          } else {
-            total += dadosTema.total;
-          }
+            listaSubtemas.forEach(sub => { if (selectedSubtemas.includes(sub)) total += dadosTema.subtemas[sub]; });
+          } else { total += dadosTema.total; }
         }
       });
     });
@@ -267,19 +232,17 @@ export default function App() {
   };
 
   async function registrarSessaoUnica(uid: string, token: string) {
-    try {
-        await supabase.from('perfis').update({ last_session_id: token }).eq('id', uid);
-    } catch (e) { console.error("Erro ao registrar sessão:", e); }
+    // Essa função força a entrada e sobrescreve qualquer token anterior no banco
+    await supabase.from('perfis').update({ last_session_id: token }).eq('id', uid);
   }
 
   async function inicializar(u: any, token: string) {
     try {
       const { data: perfil } = await supabase.from('perfis').select('*').eq('id', u.id).maybeSingle();
       
+      // Validação extra na entrada
       if (perfil?.last_session_id && perfil.last_session_id !== token) {
-        setSessaoInvalida(true); 
-        await supabase.auth.signOut(); 
-        return;
+        setSessaoInvalida(true); await supabase.auth.signOut(); return;
       }
 
       const { data: ass } = await supabase.from('assinaturas').select('*').eq('user_id', u.id).maybeSingle();
@@ -293,32 +256,21 @@ export default function App() {
       
       await buscarDadosEstruturais();
       await carregarStats(u.id);
-      if (perfil?.is_admin) {
-          carregarListaUsuarios();
-          // Não carregamos reportes aqui para não pesar o login, só ao clicar na aba
-      }
+      if (perfil?.is_admin) { carregarListaUsuarios(); }
     } catch { handleLogout(true); } finally { setLoading(false); }
   }
 
-  // --- LÓGICA DO STREAK (FOGUINHO) ---
   async function atualizarStreak(uid: string) {
     const hoje = new Date().toISOString().split('T')[0];
     const { data: perfil } = await supabase.from('perfis').select('streak_atual, ultima_atividade').eq('id', uid).single();
-    
-    if (perfil) {
-        if (perfil.ultima_atividade !== hoje) {
-            const ontem = new Date();
-            ontem.setDate(ontem.getDate() - 1);
-            const dataOntem = ontem.toISOString().split('T')[0];
-
-            let novoStreak = 1;
-            if (perfil.ultima_atividade === dataOntem) {
-                novoStreak = (perfil.streak_atual || 0) + 1;
-            }
-
-            await supabase.from('perfis').update({ streak_atual: novoStreak, ultima_atividade: hoje }).eq('id', uid);
-            setStreak(novoStreak);
-        }
+    if (perfil && perfil.ultima_atividade !== hoje) {
+        const ontem = new Date();
+        ontem.setDate(ontem.getDate() - 1);
+        const dataOntem = ontem.toISOString().split('T')[0];
+        let novoStreak = 1;
+        if (perfil.ultima_atividade === dataOntem) novoStreak = (perfil.streak_atual || 0) + 1;
+        await supabase.from('perfis').update({ streak_atual: novoStreak, ultima_atividade: hoje }).eq('id', uid);
+        setStreak(novoStreak);
     }
   }
 
@@ -382,22 +334,19 @@ export default function App() {
     });
   }, [filtroMapa]); 
 
-  // --- BUSCA COM PAGINAÇÃO E EMBARALHAMENTO ---
+  // --- BUSCA OTIMIZADA ---
   async function buscarQuestoes(novaPagina = 0) {
     if (!user) return;
     setLoading(true);
     setPage(novaPagina);
 
-    // OTIMIZAÇÃO: Select específico e count estimated
     let q = supabase.from('questoes').select('id, enunciado, opcoes, resposta_correta, disciplina, tema, subtema, imagem_url, justificativa, imagem_justificativa, origem', { count: 'estimated' });
     
-    // Filtros
     if (selectedDiscs.length > 0) q = q.in('disciplina', selectedDiscs);
     if (selectedTemas.length > 0) q = q.in('tema', selectedTemas);
     if (filterOrigem === 'originais') q = q.eq('origem', 'med53');
     if (filterOrigem === 'antigas') q = q.neq('origem', 'med53');
 
-    // Paginação
     const inicio = novaPagina * itemsPerPage;
     const fim = inicio + itemsPerPage - 1;
     q = q.range(inicio, fim);
@@ -408,7 +357,6 @@ export default function App() {
       console.error('Erro:', error);
       setQuestoes([]);
     } else {
-      // Filtragem de subtemas no cliente
       const filtradas = (data || []).filter(item => {
           if (item.subtema) {
               return selectedSubtemas.some(selected => 
@@ -417,18 +365,13 @@ export default function App() {
           }
           return true;
       });
-
-      // Se for admin, mostra na ordem original (para facilitar edição).
-      // Se for aluno, embaralha.
-      const finais = isAdmin ? filtradas : embaralharQuestoes(filtradas);
-
-      setQuestoes(finais);
+      setQuestoes(isAdmin ? filtradas : embaralharQuestoes(filtradas));
       setHasMore(count ? (inicio + itemsPerPage) < count : false);
     }
     setLoading(false);
   }
 
-  // --- FUNÇÕES DE SELEÇÃO DE FILTROS (COMPLETAS) ---
+  // --- HANDLERS FILTROS ---
   const handleSelectDisc = (disc: string, checked: boolean) => {
     const newDiscs = checked ? [...selectedDiscs, disc] : selectedDiscs.filter(d => d !== disc);
     setSelectedDiscs(newDiscs);
@@ -449,8 +392,7 @@ export default function App() {
                 novosSubtemas = novosSubtemas.filter(item => !subs.includes(item));
             }
         });
-        setSelectedTemas(novosTemas);
-        setSelectedSubtemas(novosSubtemas);
+        setSelectedTemas(novosTemas); setSelectedSubtemas(novosSubtemas);
     }
   };
 
@@ -476,11 +418,10 @@ export default function App() {
           if (!selectedDiscs.includes(disc)) setSelectedDiscs([...selectedDiscs, disc]);
           if (!selectedTemas.includes(tema)) setSelectedTemas([...selectedTemas, tema]);
           setSelectedSubtemas([...selectedSubtemas, sub]);
-      } else {
-          setSelectedSubtemas(selectedSubtemas.filter(s => s !== sub));
-      }
+      } else { setSelectedSubtemas(selectedSubtemas.filter(s => s !== sub)); }
   };
 
+  // --- AUTH ---
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true);
     try {
@@ -494,27 +435,60 @@ export default function App() {
         if (error) throw error;
         if (data.user && !data.session) { alert("Cadastro feito! Faça login."); setIsSignUp(false); }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        
+        // --- LOGIN FORÇADO: AQUI ACONTECE A MÁGICA ---
+        // Ao logar com sucesso, eu IMEDIATAMENTE digo ao banco: "Eu sou o dono agora".
+        // Isso vai fazer o Heartbeat do outro computador falhar nos próximos 5 segundos.
+        if (data.user) {
+            await registrarSessaoUnica(data.user.id, data.session!.access_token);
+        }
       }
     } catch (err: any) { alert(err.message); } finally { setLoading(false); }
   };
 
   const handleLogout = async (forced = false) => {
+    resetEstadoTotal();
+    localStorage.clear(); 
+    sessionStorage.clear();
+    
     if (!forced) setLoading(true);
     try { await supabase.auth.signOut(); } catch {} 
-    finally { localStorage.clear(); sessionStorage.clear(); resetEstadoTotal(); window.location.href = "/"; }
+    finally { window.location.href = "/"; }
   };
 
-  if (sessaoInvalida) return <div className="min-h-screen bg-rose-50 flex items-center justify-center p-6"><div className="bg-white p-8 rounded-2xl shadow-xl text-center"><AlertTriangle className="mx-auto text-rose-600 mb-4" size={32} /><h2 className="font-black text-slate-900 mb-2">Conexão Interrompida</h2><p className="text-slate-600 text-sm mb-6">Acesso detectado em outro dispositivo.</p><button onClick={() => window.location.reload()} className="bg-rose-600 text-white py-3 px-6 rounded-xl font-bold uppercase text-xs">Reconectar</button></div></div>;
+  // --- TELA DE SESSÃO DERRUBADA (O CIDADÃO VAI VER ISSO) ---
+  if (sessaoInvalida) return <div className="min-h-screen bg-rose-50 flex items-center justify-center p-6"><div className="bg-white p-8 rounded-2xl shadow-xl text-center animate-in zoom-in-95"><AlertTriangle className="mx-auto text-rose-600 mb-4" size={32} /><h2 className="font-black text-slate-900 mb-2">Conexão Interrompida</h2><p className="text-slate-600 text-sm mb-6">Sua conta foi acessada em outro dispositivo.<br/>O acesso simultâneo não é permitido.</p><button onClick={() => window.location.reload()} className="bg-rose-600 text-white py-3 px-6 rounded-xl font-bold uppercase text-xs hover:bg-rose-700 transition-colors">Reconectar Aqui</button></div></div>;
 
-  if (loading && !user) return <div className="min-h-screen flex flex-col items-center justify-center bg-[#FBFBFB] gap-4"><Loader2 className="animate-spin text-[#00a884]" size={24} /><span className="text-slate-400 text-xs font-bold uppercase tracking-widest">Carregando MED53...</span></div>;
+  if (loading && !user) return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FBFBFB] gap-4">
+          <Loader2 className="animate-spin text-[#00a884]" size={24} />
+          <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">Carregando MED53...</span>
+          <div className="flex flex-col items-center gap-2 mt-4 animate-in fade-in slide-in-from-bottom-2 duration-1000">
+             <Server size={16} className="text-slate-300 animate-pulse"/>
+             <p className="text-[10px] text-slate-400 text-center max-w-[250px]">
+               Demorando? O servidor pode estar "acordando" (Cold Start) ou verificando sua sessão única.<br/>Isso leva cerca de 10-20 segundos na primeira vez.
+             </p>
+          </div>
+      </div>
+  );
 
   if (!user) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="bg-white p-10 rounded-3xl border border-slate-200 w-full max-w-xs shadow-2xl animate-in zoom-in-95">
         <h1 className="text-3xl font-black text-slate-900 mb-2 text-center tracking-tighter italic">MED<span className="text-[#00a884] not-italic">53</span></h1>
-        <p className="text-center text-slate-500 text-[10px] uppercase font-black mb-8 tracking-widest">{isForgot ? 'Recuperar Acesso' : (isSignUp ? 'Criar Nova Conta' : 'Acesso Acadêmico')}</p>
+        <p className="text-center text-slate-500 text-[10px] uppercase font-black mb-6 tracking-widest">{isForgot ? 'Recuperar Acesso' : (isSignUp ? 'Criar Nova Conta' : 'Acesso Acadêmico')}</p>
+        
+        {/* AVISO DE CONTA ÚNICA NA TELA DE LOGIN */}
+        <div className="mb-6 p-3 bg-amber-50 border border-amber-100 rounded-xl flex gap-3 items-start">
+            <ShieldAlert size={16} className="text-amber-500 shrink-0 mt-0.5"/>
+            <div>
+                <p className="text-[10px] text-amber-800 font-bold leading-tight mb-1">Acesso Pessoal & Intransferível</p>
+                <p className="text-[9px] text-amber-700 leading-tight opacity-80">Login simultâneo bloqueia a conexão anterior automaticamente.</p>
+            </div>
+        </div>
+
         <form onSubmit={handleAuth} className="space-y-4">
           <div className="relative"><Mail className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="email" placeholder="E-mail" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={email} onChange={e => setEmail(e.target.value)} required /></div>
           {isSignUp && <div className="relative animate-in slide-in-from-top-2"><Mail className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="email" placeholder="Confirme E-mail" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={confirmEmail} onChange={e => setConfirmEmail(e.target.value)} required /></div>}
@@ -536,7 +510,6 @@ export default function App() {
     <div className="h-screen w-screen bg-[#FBFBFB] text-slate-800 font-sans text-[13px] flex flex-col overflow-hidden">
       <nav className="shrink-0 bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          
           {viewMode === 'feed' && (
              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
                  {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -848,6 +821,7 @@ export default function App() {
           {abaAdmin === 'questoes' && isAdmin && (
             <form onSubmit={async (e: any) => { 
                 e.preventDefault(); 
+                // SALVA COM AS DUAS IMAGENS
                 await supabase.from('questoes').insert([{ 
                     enunciado: fEnun, opcoes: fOps, resposta_correta: fCorr, 
                     disciplina: fDisc, tema: fTema, subtema: fSubtema || null, 
