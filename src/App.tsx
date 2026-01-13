@@ -5,7 +5,7 @@ import {
   Menu, X, Lock, Star, Target, ArrowLeft, BarChart3, Mail, List, 
   Save, CreditCard, AlertTriangle, Loader2, Archive, Play, 
   ChevronRight, ChevronLeft, Layout, FolderOpen, Folder, Clock,
-  Trash2, Edit, Flame, Flag, MessageSquare // <--- NOVOS ÍCONES
+  Trash2, Edit, Flame, Flag, AlertOctagon
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO ---
@@ -19,14 +19,22 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 // --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO (FISHER-YATES) ---
 function embaralharQuestoes(listaQuestoes: any[]) {
   return listaQuestoes.map(q => {
+    // Se não tiver opções (ex: discursiva) ou admin estiver editando, não mexe
     if (!q.opcoes || q.opcoes.length === 0) return q;
+
+    // 1. Cria um array de objetos para rastrear qual é a correta
     const opcoesMapeadas = q.opcoes.map((texto: string, index: number) => ({
-      texto, ehCorreta: index === q.resposta_correta
+      texto,
+      ehCorreta: index === q.resposta_correta
     }));
+
+    // 2. Algoritmo de embaralhamento
     for (let i = opcoesMapeadas.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [opcoesMapeadas[i], opcoesMapeadas[j]] = [opcoesMapeadas[j], opcoesMapeadas[i]];
     }
+
+    // 3. Reconstrói a questão com a nova ordem e o novo índice da resposta certa
     return {
       ...q,
       opcoes: opcoesMapeadas.map((o: any) => o.texto),
@@ -47,7 +55,7 @@ export default function App() {
   // Streak (Foguinho)
   const [streak, setStreak] = useState(0);
 
-  // Reporte de Erro
+  // Reporte de Erro (Estado do Modal)
   const [reportingId, setReportingId] = useState<number | null>(null);
 
   // Auth
@@ -81,9 +89,10 @@ export default function App() {
   const [itemsPerPage, setItemsPerPage] = useState(25); // Padrão 25
   const [hasMore, setHasMore] = useState(false);
 
-  // Admin Geral
-  const [abaAdmin, setAbaAdmin] = useState<'questoes' | 'usuarios' | null>(null);
+  // Admin Geral e Reportes
+  const [abaAdmin, setAbaAdmin] = useState<'questoes' | 'usuarios' | 'reportes' | null>(null);
   const [listaUsuarios, setListaUsuarios] = useState<any[]>([]);
+  const [listaReportes, setListaReportes] = useState<any[]>([]); // Lista de reportes do admin
   const [datasTemp, setDatasTemp] = useState<Record<string, string>>({});
 
   // Form Admin (Cadastro Novo)
@@ -94,8 +103,8 @@ export default function App() {
   const [fTema, setFTema] = useState('');
   const [fSubtema, setFSubtema] = useState('');
   const [fJust, setFJust] = useState('');
-  const [fImg, setFImg] = useState(''); // Imagem do Enunciado
-  const [fImgJust, setFImgJust] = useState(''); // Imagem da Justificativa
+  const [fImg, setFImg] = useState(''); 
+  const [fImgJust, setFImgJust] = useState(''); 
   const [fOrigemCadastro, setFOrigemCadastro] = useState('med53'); 
 
   // --- ADMIN IN-LINE (Edição Rápida) ---
@@ -151,7 +160,7 @@ export default function App() {
     setLoading(false);
   };
 
-  // --- FUNÇÃO DE REPORTAR ERRO ---
+  // --- FUNÇÃO DO ALUNO: REPORTAR ERRO ---
   const handleReportIssue = async (qId: number, motivo: string) => {
     if(!user) return;
     try {
@@ -163,36 +172,60 @@ export default function App() {
         alert("Obrigado! Vamos analisar o erro.");
         setReportingId(null); // Fecha o menu
     } catch (e) {
-        alert("Erro ao enviar reporte.");
+        alert("Erro ao enviar reporte. Verifique se o SQL da tabela 'reportes' foi criado.");
     }
   };
 
-  // --- INICIALIZAÇÃO CORRIGIDA ---
-  useEffect(() => {
-    let mounted = true;
+  // --- FUNÇÕES DE ADMIN: GERENCIAR REPORTES ---
+  async function carregarReportes() {
+      // Busca reportes e tenta trazer dados da questão (join)
+      const { data, error } = await supabase
+        .from('reportes')
+        .select('*, questoes(disciplina, tema)')
+        .order('created_at', { ascending: false });
+      
+      if (error) console.error("Erro reportes:", error);
+      setListaReportes(data || []);
+  }
 
-    const initSession = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error || !session) {
-          if (mounted) resetEstadoTotal();
-          return;
-        }
-
-        if (session?.user) {
-          // Atualiza sessão no banco, mas não bloqueia se falhar
-          await registrarSessaoUnica(session.user.id, session.access_token);
-          if (mounted) await inicializar(session.user, session.access_token);
-        }
-      } catch (err) {
-        console.error("Erro na sessão:", err);
-        if (mounted) resetEstadoTotal();
+  async function resolverReporte(qId: number, reporteId: number) {
+      setLoading(true);
+      // 1. Busca a questão específica
+      const { data: questao } = await supabase.from('questoes').select('*').eq('id', qId).single();
+      
+      if (questao) {
+          // 2. Coloca ela na tela (sozinha)
+          setQuestoes([questao]);
+          setViewMode('feed'); // Vai para o modo de visualização
+          setAbaAdmin(null);   // Sai do painel admin
+          
+          // 3. Abre o editor automaticamente nela
+          startEditing(questao);
+          
+      } else {
+          alert("Questão não encontrada (pode ter sido apagada).");
       }
+      setLoading(false);
+  }
+
+  async function apagarReporte(id: number) {
+      if(!confirm("Apagar este reporte da lista?")) return;
+      await supabase.from('reportes').delete().eq('id', id);
+      carregarReportes(); // Recarrega a lista
+  }
+
+  // --- INICIALIZAÇÃO E SESSÃO ---
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await registrarSessaoUnica(session.user.id, session.access_token);
+          await inicializar(session.user, session.access_token);
+        } else { resetEstadoTotal(); }
+      } catch { resetEstadoTotal(); }
     };
-
-    initSession();
-
+    checkSession();
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
         resetEstadoTotal();
@@ -201,11 +234,7 @@ export default function App() {
         inicializar(session.user, session.access_token);
       }
     });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   const contagemPrevia = useMemo(() => {
@@ -245,10 +274,8 @@ export default function App() {
 
   async function inicializar(u: any, token: string) {
     try {
-      const { data: perfil, error } = await supabase.from('perfis').select('*').eq('id', u.id).maybeSingle();
+      const { data: perfil } = await supabase.from('perfis').select('*').eq('id', u.id).maybeSingle();
       
-      if (error) throw error;
-
       if (perfil?.last_session_id && perfil.last_session_id !== token) {
         setSessaoInvalida(true); 
         await supabase.auth.signOut(); 
@@ -266,10 +293,11 @@ export default function App() {
       
       await buscarDadosEstruturais();
       await carregarStats(u.id);
-      if (perfil?.is_admin) carregarListaUsuarios();
-    } catch (err) { 
-        console.error("Erro na inicialização:", err);
-    } finally { setLoading(false); }
+      if (perfil?.is_admin) {
+          carregarListaUsuarios();
+          // Não carregamos reportes aqui para não pesar o login, só ao clicar na aba
+      }
+    } catch { handleLogout(true); } finally { setLoading(false); }
   }
 
   // --- LÓGICA DO STREAK (FOGUINHO) ---
@@ -360,7 +388,8 @@ export default function App() {
     setLoading(true);
     setPage(novaPagina);
 
-    let q = supabase.from('questoes').select('*', { count: 'exact' });
+    // OTIMIZAÇÃO: Select específico e count estimated
+    let q = supabase.from('questoes').select('id, enunciado, opcoes, resposta_correta, disciplina, tema, subtema, imagem_url, justificativa, imagem_justificativa, origem', { count: 'estimated' });
     
     // Filtros
     if (selectedDiscs.length > 0) q = q.in('disciplina', selectedDiscs);
@@ -379,6 +408,7 @@ export default function App() {
       console.error('Erro:', error);
       setQuestoes([]);
     } else {
+      // Filtragem de subtemas no cliente
       const filtradas = (data || []).filter(item => {
           if (item.subtema) {
               return selectedSubtemas.some(selected => 
@@ -387,15 +417,18 @@ export default function App() {
           }
           return true;
       });
-      // Aplica embaralhamento para alunos
-      const finais = embaralharQuestoes(filtradas);
+
+      // Se for admin, mostra na ordem original (para facilitar edição).
+      // Se for aluno, embaralha.
+      const finais = isAdmin ? filtradas : embaralharQuestoes(filtradas);
+
       setQuestoes(finais);
       setHasMore(count ? (inicio + itemsPerPage) < count : false);
     }
     setLoading(false);
   }
 
-  // --- FUNÇÕES DE SELEÇÃO DE FILTROS ---
+  // --- FUNÇÕES DE SELEÇÃO DE FILTROS (COMPLETAS) ---
   const handleSelectDisc = (disc: string, checked: boolean) => {
     const newDiscs = checked ? [...selectedDiscs, disc] : selectedDiscs.filter(d => d !== disc);
     setSelectedDiscs(newDiscs);
@@ -468,17 +501,9 @@ export default function App() {
   };
 
   const handleLogout = async (forced = false) => {
-    resetEstadoTotal();
     if (!forced) setLoading(true);
-    try { 
-        await supabase.auth.signOut(); 
-    } catch (error) {
-        console.error("Erro ao sair:", error);
-    } finally { 
-        localStorage.clear(); 
-        sessionStorage.clear(); 
-        window.location.href = "/"; 
-    }
+    try { await supabase.auth.signOut(); } catch {} 
+    finally { localStorage.clear(); sessionStorage.clear(); resetEstadoTotal(); window.location.href = "/"; }
   };
 
   if (sessaoInvalida) return <div className="min-h-screen bg-rose-50 flex items-center justify-center p-6"><div className="bg-white p-8 rounded-2xl shadow-xl text-center"><AlertTriangle className="mx-auto text-rose-600 mb-4" size={32} /><h2 className="font-black text-slate-900 mb-2">Conexão Interrompida</h2><p className="text-slate-600 text-sm mb-6">Acesso detectado em outro dispositivo.</p><button onClick={() => window.location.reload()} className="bg-rose-600 text-white py-3 px-6 rounded-xl font-bold uppercase text-xs">Reconectar</button></div></div>;
@@ -529,7 +554,11 @@ export default function App() {
               <span className="font-black text-[10px]">{streak}</span>
           </div>
 
-          {isAdmin && (<div className="hidden sm:flex gap-2"><button onClick={() => setAbaAdmin(abaAdmin === 'questoes' ? null : 'questoes')} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all ${abaAdmin === 'questoes' ? 'bg-[#00a884] text-white' : 'text-slate-600'}`}>Questões</button><button onClick={() => setAbaAdmin(abaAdmin === 'usuarios' ? null : 'usuarios')} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all ${abaAdmin === 'usuarios' ? 'bg-[#00a884] text-white' : 'text-slate-600'}`}>Alunos</button></div>)}
+          {isAdmin && (<div className="hidden sm:flex gap-2">
+              <button onClick={() => setAbaAdmin(abaAdmin === 'questoes' ? null : 'questoes')} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all ${abaAdmin === 'questoes' ? 'bg-[#00a884] text-white' : 'text-slate-600'}`}>Questões</button>
+              <button onClick={() => setAbaAdmin(abaAdmin === 'usuarios' ? null : 'usuarios')} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all ${abaAdmin === 'usuarios' ? 'bg-[#00a884] text-white' : 'text-slate-600'}`}>Alunos</button>
+              <button onClick={() => { setAbaAdmin(abaAdmin === 'reportes' ? null : 'reportes'); carregarReportes(); }} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all flex items-center gap-1 ${abaAdmin === 'reportes' ? 'bg-rose-600 text-white border-rose-600' : 'text-slate-600 border-slate-200'}`}> <AlertOctagon size={10}/> Reportes</button>
+          </div>)}
           <button onClick={() => handleLogout(false)} className="text-slate-600 hover:text-rose-600 transition-colors flex items-center gap-1 font-black uppercase text-[10px]">Sair <LogOut size={16}/></button>
         </div>
       </nav>
@@ -750,7 +779,7 @@ export default function App() {
             </div>
           )}
 
-          {/* ÁREA ADMIN */}
+          {/* PAINEL: USUÁRIOS */}
           {abaAdmin === 'usuarios' && isAdmin && (
             <div className="max-w-5xl mx-auto p-12 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm animate-in fade-in">
               <div className="p-4 bg-slate-50 border-b font-black text-[10px] uppercase text-slate-600 tracking-widest">Controle de Assinaturas</div>
@@ -788,11 +817,37 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* PAINEL: REPORTES (NOVO) */}
+          {abaAdmin === 'reportes' && isAdmin && (
+            <div className="max-w-4xl mx-auto p-12 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm animate-in fade-in">
+              <div className="p-4 bg-rose-50 border-b border-rose-100 font-black text-[10px] uppercase text-rose-700 tracking-widest flex items-center gap-2"><AlertOctagon size={14}/> Reportes de Erro</div>
+              <div className="divide-y divide-slate-100">
+                  {listaReportes.length === 0 ? <div className="p-8 text-center text-slate-400 text-xs italic">Nenhum erro reportado.</div> : listaReportes.map(rep => (
+                      <div key={rep.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
+                          <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                  <span className="px-2 py-0.5 bg-rose-100 text-rose-700 rounded text-[9px] font-black uppercase">{rep.motivo}</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">{new Date(rep.created_at).toLocaleDateString()}</span>
+                              </div>
+                              <div className="text-xs text-slate-600">
+                                  Questão <span className="font-bold text-slate-800">#{rep.questao_id}</span> • {rep.questoes ? `${rep.questoes.disciplina} > ${rep.questoes.tema}` : 'Questão apagada'}
+                              </div>
+                          </div>
+                          <div className="flex gap-2">
+                              <button onClick={() => resolverReporte(rep.questao_id, rep.id)} className="px-3 py-1.5 bg-[#00a884] text-white rounded text-[10px] font-black uppercase hover:bg-[#008f6f]">Ver & Corrigir</button>
+                              <button onClick={() => apagarReporte(rep.id)} className="px-3 py-1.5 border border-slate-300 text-slate-500 rounded text-[10px] font-black uppercase hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200">Apagar</button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+            </div>
+          )}
           
+          {/* PAINEL: NOVA QUESTÃO */}
           {abaAdmin === 'questoes' && isAdmin && (
             <form onSubmit={async (e: any) => { 
                 e.preventDefault(); 
-                // SALVA COM AS DUAS IMAGENS
                 await supabase.from('questoes').insert([{ 
                     enunciado: fEnun, opcoes: fOps, resposta_correta: fCorr, 
                     disciplina: fDisc, tema: fTema, subtema: fSubtema || null, 
