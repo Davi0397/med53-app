@@ -5,7 +5,7 @@ import {
   Menu, X, Lock, Star, Target, ArrowLeft, BarChart3, Mail, List, 
   Save, CreditCard, AlertTriangle, Loader2, Archive, Play, 
   ChevronRight, ChevronLeft, Layout, FolderOpen, Folder, Clock,
-  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags
+  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags // <--- Tags IMPORTADO
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO ---
@@ -16,7 +16,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, storage: window.localStorage, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
-// --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO (FISHER-YATES) ---
+// --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO ---
 function embaralharQuestoes(listaQuestoes: any[]) {
   return listaQuestoes.map(q => {
     // Se não tiver opções (ex: discursiva) ou admin estiver editando, não mexe
@@ -28,7 +28,7 @@ function embaralharQuestoes(listaQuestoes: any[]) {
       ehCorreta: index === q.resposta_correta
     }));
 
-    // 2. Algoritmo de embaralhamento
+    // 2. Algoritmo de embaralhamento (Fisher-Yates)
     for (let i = opcoesMapeadas.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [opcoesMapeadas[i], opcoesMapeadas[j]] = [opcoesMapeadas[j], opcoesMapeadas[i]];
@@ -89,7 +89,7 @@ export default function App() {
   const [itemsPerPage, setItemsPerPage] = useState(25); // Padrão 25
   const [hasMore, setHasMore] = useState(false);
 
-  // Admin Geral e Reportes
+  // Admin Geral
   const [abaAdmin, setAbaAdmin] = useState<'questoes' | 'usuarios' | 'reportes' | 'padronizacao' | null>(null);
   const [listaUsuarios, setListaUsuarios] = useState<any[]>([]);
   const [listaReportes, setListaReportes] = useState<any[]>([]); 
@@ -104,8 +104,8 @@ export default function App() {
   const [fTema, setFTema] = useState('');
   const [fSubtema, setFSubtema] = useState('');
   const [fJust, setFJust] = useState('');
-  const [fImg, setFImg] = useState(''); 
-  const [fImgJust, setFImgJust] = useState(''); 
+  const [fImg, setFImg] = useState(''); // Imagem do Enunciado
+  const [fImgJust, setFImgJust] = useState(''); // Imagem da Justificativa
   const [fOrigemCadastro, setFOrigemCadastro] = useState('med53'); 
 
   // --- ADMIN IN-LINE (Edição Rápida) ---
@@ -171,7 +171,7 @@ export default function App() {
             motivo: motivo
         }]);
         alert("Obrigado! Vamos analisar o erro.");
-        setReportingId(null); 
+        setReportingId(null); // Fecha o menu
     } catch (e) {
         alert("Erro ao enviar reporte. Verifique se o SQL da tabela 'reportes' foi criado.");
     }
@@ -206,15 +206,14 @@ export default function App() {
   async function apagarReporte(id: number) {
       if(!confirm("Apagar este reporte da lista?")) return;
       await supabase.from('reportes').delete().eq('id', id);
-      carregarReportes(); 
+      carregarReportes(); // Recarrega a lista
   }
 
-  // --- FUNÇÕES DE ADMIN: PADRONIZAÇÃO (NOVO) ---
+  // --- FUNÇÕES DE ADMIN: PADRONIZAÇÃO ---
   async function carregarPadronizacao() {
-      const { data } = await supabase.from('questoes').select('disciplina, tema');
+      const { data } = await supabase.from('questoes').select('disciplina, tema').range(0, 9999);
       if(!data) return;
 
-      // Agrupa no JS para contar
       const mapa: Record<string, { disciplina: string, tema: string, count: number }> = {};
       
       data.forEach(item => {
@@ -230,21 +229,29 @@ export default function App() {
       setListaTemasAdmin(listaOrdenada);
   }
 
-  async function renomearTema(disc: string, temaAntigo: string) {
-      const novoNome = prompt(`Renomear o tema "${temaAntigo}" (${disc}) para:`, temaAntigo);
-      if(!novoNome || novoNome === temaAntigo) return;
+  // --- ATUALIZADO: EDITA DISCIPLINA E TEMA AO MESMO TEMPO ---
+  async function editarTopico(discAntiga: string, temaAntigo: string, count: number) {
+      // 1. Pergunta a Nova Disciplina
+      const novaDisc = prompt(`ATENÇÃO: Editando ${count} questões.\n\nQual a NOVA DISCIPLINA para "${temaAntigo}"?`, discAntiga);
+      if(!novaDisc) return; // Cancelou
 
-      if(!confirm(`Isso vai mover TODAS as questões de "${temaAntigo}" para "${novoNome}".\nSe "${novoNome}" já existir, elas serão fundidas.\nConfirmar?`)) return;
+      // 2. Pergunta o Novo Tema
+      const novoTema = prompt(`Disciplina definida: ${novaDisc}\n\nQual o NOVO TEMA?`, temaAntigo);
+      if(!novoTema) return; // Cancelou
+
+      if (novaDisc === discAntiga && novoTema === temaAntigo) return; // Não mudou nada
+
+      if(!confirm(`Mover ${count} questões\nDE: ${discAntiga} > ${temaAntigo}\nPARA: ${novaDisc} > ${novoTema}\n\nConfirmar?`)) return;
 
       setLoading(true);
       const { error } = await supabase.from('questoes')
-          .update({ tema: novoNome })
-          .eq('disciplina', disc)
+          .update({ disciplina: novaDisc, tema: novoTema })
+          .eq('disciplina', discAntiga)
           .eq('tema', temaAntigo);
 
       if(error) alert("Erro ao atualizar: " + error.message);
       else {
-          alert("Sucesso! Temas unificados.");
+          alert("Sucesso! Tópicos atualizados.");
           await carregarPadronizacao();
           await buscarDadosEstruturais();
       }
@@ -253,20 +260,19 @@ export default function App() {
 
   // --- HEARTBEAT ANTI-PREJUÍZO 💓 ---
   useEffect(() => {
-    if (!user) return; 
+    if (!user) return; // Só roda se tiver usuário logado
 
     const checkSessaoAtiva = async () => {
         const session = await supabase.auth.getSession();
         const tokenAtual = session.data.session?.access_token;
-        
         if (!tokenAtual) return;
 
         const { data } = await supabase.from('perfis').select('last_session_id').eq('id', user.id).single();
 
         if (data?.last_session_id && data.last_session_id !== tokenAtual) {
             console.warn("Sessão derrubada por novo login.");
-            setSessaoInvalida(true); 
-            supabase.auth.signOut(); 
+            setSessaoInvalida(true); // Ativa a tela vermelha
+            supabase.auth.signOut(); // Desloga do Supabase
         }
     };
 
@@ -278,7 +284,7 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
 
-    // Timeout de segurança: 8s
+    // VÁLVULA DE SEGURANÇA: Se em 8 segundos não carregar, libera a tela de login.
     const safetyTimer = setTimeout(() => {
         if (mounted && loading) {
             console.log("Timeout de segurança ativado.");
@@ -354,7 +360,6 @@ export default function App() {
     try {
       const { data: perfil } = await supabase.from('perfis').select('*').eq('id', u.id).maybeSingle();
       
-      // Se não tiver perfil, loga no console mas continua (pode ser o bug do trigger)
       if (!perfil) console.warn("Perfil não encontrado no init.");
 
       if (perfil?.last_session_id && perfil.last_session_id !== token) {
@@ -417,7 +422,11 @@ export default function App() {
   }
 
   async function buscarDadosEstruturais() {
-    const { data } = await supabase.from('questoes').select('disciplina, tema, subtema, origem');
+    // TEM QUE TER O .range(0, 9999) AQUI
+    const { data } = await supabase
+        .from('questoes')
+        .select('disciplina, tema, subtema, origem')
+        .range(0, 9999); 
     setAllData(data || []);
   }
 
@@ -467,11 +476,13 @@ export default function App() {
 
     let q = supabase.from('questoes').select('id, enunciado, opcoes, resposta_correta, disciplina, tema, subtema, imagem_url, justificativa, imagem_justificativa, origem', { count: 'estimated' });
     
+    // Filtros
     if (selectedDiscs.length > 0) q = q.in('disciplina', selectedDiscs);
     if (selectedTemas.length > 0) q = q.in('tema', selectedTemas);
     if (filterOrigem === 'originais') q = q.eq('origem', 'med53');
     if (filterOrigem === 'antigas') q = q.neq('origem', 'med53');
 
+    // Paginação
     const inicio = novaPagina * itemsPerPage;
     const fim = inicio + itemsPerPage - 1;
     q = q.range(inicio, fim);
@@ -482,6 +493,7 @@ export default function App() {
       console.error('Erro:', error);
       setQuestoes([]);
     } else {
+      // 1. Filtragem de subtemas no cliente
       const filtradas = (data || []).filter(item => {
           if (item.subtema) {
               return selectedSubtemas.some(selected => 
@@ -491,7 +503,9 @@ export default function App() {
           return true;
       });
 
+      // 2. APLICAR O EMBARALHAMENTO AQUI
       const finais = isAdmin ? filtradas : embaralharQuestoes(filtradas);
+
       setQuestoes(finais);
       setHasMore(count ? (inicio + itemsPerPage) < count : false);
     }
@@ -566,6 +580,7 @@ export default function App() {
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        // FORÇA A ENTRADA: Registra a sessão imediatamente ao logar com sucesso
         if (data.user) {
             await registrarSessaoUnica(data.user.id, data.session!.access_token);
         }
@@ -589,6 +604,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#FBFBFB] gap-4">
         <Loader2 className="animate-spin text-[#00a884]" size={24} />
         <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">Carregando MED53...</span>
+        {/* AVISO DE CARREGAMENTO PARA O USUÁRIO ENTENDER A DEMORA */}
         <div className="flex flex-col items-center gap-2 mt-4 animate-in fade-in slide-in-from-bottom-2 duration-1000">
            <Server size={16} className="text-slate-300 animate-pulse"/>
            <p className="text-[10px] text-slate-400 text-center max-w-[250px]">
@@ -604,6 +620,7 @@ export default function App() {
         <h1 className="text-3xl font-black text-slate-900 mb-2 text-center tracking-tighter italic">MED<span className="text-[#00a884] not-italic">53</span></h1>
         <p className="text-center text-slate-500 text-[10px] uppercase font-black mb-6 tracking-widest">{isForgot ? 'Recuperar Acesso' : (isSignUp ? 'Criar Nova Conta' : 'Acesso Acadêmico')}</p>
         
+        {/* AVISO DE SEGURANÇA (NOVO) */}
         <div className="mb-6 p-3 bg-amber-50 border border-amber-100 rounded-xl flex gap-3 items-start">
             <ShieldAlert size={16} className="text-amber-500 shrink-0 mt-0.5"/>
             <p className="text-[10px] text-amber-800 font-bold leading-tight">Conta pessoal. Acessos simultâneos bloqueiam a conexão anterior.</p>
@@ -640,6 +657,8 @@ export default function App() {
           <h1 onClick={() => setAbaAdmin(null)} className="text-lg font-black text-slate-900 tracking-tighter cursor-pointer">MED<span className="text-[#00a884]">53</span></h1>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
+          
+          {/* FOGUINHO (STREAK) */}
           <div className="flex items-center gap-1 bg-orange-50 text-orange-600 px-3 py-1 rounded-full border border-orange-100" title="Dias seguidos de estudo">
               <Flame size={14} fill="currentColor" className={streak > 0 ? "animate-pulse" : "opacity-50"} />
               <span className="font-black text-[10px]">{streak}</span>
@@ -882,7 +901,8 @@ export default function App() {
                       const hoje = new Date();
                       const exp = u.assinatura?.data_expiracao ? new Date(u.assinatura.data_expiracao) : null;
                       const dataFormatada = exp ? exp.toLocaleDateString('pt-BR') : '-';
-                      let textoPrazo = null; let corPrazo = '';
+                      let textoPrazo = null;
+                      let corPrazo = '';
                       if (exp) {
                           const diff = exp.getTime() - hoje.getTime();
                           const dias = Math.ceil(diff / (86400000));
@@ -894,7 +914,10 @@ export default function App() {
                         <tr key={u.id} className="hover:bg-slate-50/30">
                           <td className="p-4 font-bold text-slate-800 text-[12px]">{u.email}</td>
                           <td className="p-4"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${u.assinatura?.status === 'ativo' ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'}`}>{u.assinatura?.status || 'pendente'}</span></td>
-                          <td className="p-4"><div className="text-[11px] font-mono text-slate-600 mb-0.5 flex items-center gap-1.5"><Clock size={12} className="opacity-50"/> {dataFormatada}</div>{textoPrazo && <div className={`text-[9px] font-black uppercase tracking-wide ${corPrazo}`}>{textoPrazo}</div>}</td>
+                          <td className="p-4">
+                              <div className="text-[11px] font-mono text-slate-600 mb-0.5 flex items-center gap-1.5"><Clock size={12} className="opacity-50"/> {dataFormatada}</div>
+                              {textoPrazo && <div className={`text-[9px] font-black uppercase tracking-wide ${corPrazo}`}>{textoPrazo}</div>}
+                          </td>
                           <td className="p-4"><input type="date" className="border border-slate-300 rounded p-1.5 text-[11px]" onChange={(e) => setDatasTemp({...datasTemp, [u.id]: e.target.value})}/></td>
                           <td className="p-4"><button onClick={() => definirValidadeManual(u.id)} className="flex items-center gap-1 bg-[#00a884] text-white px-3 py-1.5 rounded hover:bg-[#008f6f] text-[10px] font-black uppercase transition-all"><Save size={12} /> Salvar</button></td>
                         </tr>
@@ -932,7 +955,7 @@ export default function App() {
             </div>
           )}
 
-          {/* PAINEL: PADRONIZAÇÃO DE TEMAS (NOVO) */}
+          {/* PAINEL: PADRONIZAÇÃO DE TEMAS (ATUALIZADO PARA EDITAR DISCIPLINA) */}
           {abaAdmin === 'padronizacao' && isAdmin && (
             <div className="max-w-4xl mx-auto p-12 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm animate-in fade-in">
               <div className="p-4 bg-blue-50 border-b border-blue-100 font-black text-[10px] uppercase text-blue-700 tracking-widest flex items-center gap-2"><Tags size={14}/> Limpeza de Tópicos</div>
@@ -944,7 +967,7 @@ export default function App() {
                               <span className="text-xs font-bold text-slate-700">{item.tema}</span>
                               <span className="ml-2 bg-slate-100 px-1.5 py-0.5 rounded text-[9px] text-slate-500">{item.count} questões</span>
                           </div>
-                          <button onClick={() => renomearTema(item.disciplina, item.tema)} className="px-3 py-1.5 border border-blue-200 text-blue-600 rounded text-[10px] font-black uppercase hover:bg-blue-50 flex items-center gap-1"><Edit size={10}/> Editar / Fundir</button>
+                          <button onClick={() => editarTopico(item.disciplina, item.tema, item.count)} className="px-3 py-1.5 border border-blue-200 text-blue-600 rounded text-[10px] font-black uppercase hover:bg-blue-50 flex items-center gap-1"><Edit size={10}/> Editar / Fundir</button>
                       </div>
                   ))}
               </div>
@@ -983,34 +1006,171 @@ function questionsList(questoes: any[], respostas: any, editingId: any, editForm
 
         return (
           <div key={q.id} className={`bg-white border-l-4 ${isEditing ? 'border-orange-500 ring-2 ring-orange-200' : 'border-[#00a884]'} border-t border-b border-r border-slate-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow mb-8`}>
+            
             {isEditing ? (
               <div className="p-6 bg-orange-50 space-y-4 animate-in fade-in">
-                <div className="flex justify-between items-center mb-4 border-b border-orange-200 pb-2"><span className="font-black text-orange-600 uppercase text-xs tracking-widest">Editando Questão #{q.id}</span><button onClick={cancelEditing} className="text-slate-400 hover:text-slate-600"><X size={16}/></button></div>
-                <textarea value={editForm.enunciado} onChange={e => setEditForm({...editForm, enunciado: e.target.value})} className="w-full p-3 border border-orange-200 rounded bg-white text-sm font-bold text-slate-700" placeholder="Enunciado da questão..." rows={4} />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{editForm.opcoes.map((op: string, i: number) => (<div key={i} className="flex items-center gap-2"><span className={`font-black text-xs ${i === editForm.resposta_correta ? 'text-green-600' : 'text-slate-400'}`}>{String.fromCharCode(65+i)}</span><input value={op} onChange={e => { const novasOps = [...editForm.opcoes]; novasOps[i] = e.target.value; setEditForm({...editForm, opcoes: novasOps}); }} className={`w-full p-2 border rounded text-xs ${i === editForm.resposta_correta ? 'border-green-400 bg-green-50' : 'border-slate-300'}`} /><input type="radio" name={`gabarito-${q.id}`} checked={i === editForm.resposta_correta} onChange={() => setEditForm({...editForm, resposta_correta: i})} className="accent-green-600 cursor-pointer" title="Marcar como correta" /></div>))}</div>
-                <div className="grid grid-cols-3 gap-2"><input value={editForm.disciplina} onChange={e => setEditForm({...editForm, disciplina: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Disciplina" /><input value={editForm.tema} onChange={e => setEditForm({...editForm, tema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Tema" /><input value={editForm.subtema || ''} onChange={e => setEditForm({...editForm, subtema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Subtema" /></div>
-                <textarea value={editForm.justificativa || ''} onChange={e => setEditForm({...editForm, justificativa: e.target.value})} className="w-full p-3 border border-slate-300 rounded bg-white text-xs italic text-slate-600" placeholder="Comentário/Justificativa..." rows={3} />
-                <div className="grid grid-cols-2 gap-2"><input value={editForm.imagem_url || ''} onChange={e => setEditForm({...editForm, imagem_url: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem ENUNCIADO" /><input value={editForm.imagem_justificativa || ''} onChange={e => setEditForm({...editForm, imagem_justificativa: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem EXPLICAÇÃO" /></div>
-                <div className="flex gap-2 pt-2"><button onClick={handleInlineSave} className="flex-1 bg-green-600 text-white py-2 rounded font-black text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2"><Save size={14}/> Salvar Alterações</button><button onClick={cancelEditing} className="px-4 py-2 border border-slate-300 rounded text-slate-500 font-bold text-xs uppercase hover:bg-slate-50">Cancelar</button></div>
+                <div className="flex justify-between items-center mb-4 border-b border-orange-200 pb-2">
+                  <span className="font-black text-orange-600 uppercase text-xs tracking-widest">Editando Questão #{q.id}</span>
+                  <button onClick={cancelEditing} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
+                </div>
+                
+                <textarea 
+                  value={editForm.enunciado} 
+                  onChange={e => setEditForm({...editForm, enunciado: e.target.value})}
+                  className="w-full p-3 border border-orange-200 rounded bg-white text-sm font-bold text-slate-700"
+                  placeholder="Enunciado da questão..."
+                  rows={4}
+                />
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {editForm.opcoes.map((op: string, i: number) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className={`font-black text-xs ${i === editForm.resposta_correta ? 'text-green-600' : 'text-slate-400'}`}>{String.fromCharCode(65+i)}</span>
+                      <input 
+                        value={op}
+                        onChange={e => {
+                          const novasOps = [...editForm.opcoes];
+                          novasOps[i] = e.target.value;
+                          setEditForm({...editForm, opcoes: novasOps});
+                        }}
+                        className={`w-full p-2 border rounded text-xs ${i === editForm.resposta_correta ? 'border-green-400 bg-green-50' : 'border-slate-300'}`}
+                      />
+                      <input 
+                        type="radio" 
+                        name={`gabarito-${q.id}`} 
+                        checked={i === editForm.resposta_correta} 
+                        onChange={() => setEditForm({...editForm, resposta_correta: i})}
+                        className="accent-green-600 cursor-pointer"
+                        title="Marcar como correta"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={editForm.disciplina} onChange={e => setEditForm({...editForm, disciplina: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Disciplina" />
+                  <input value={editForm.tema} onChange={e => setEditForm({...editForm, tema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Tema" />
+                  <input value={editForm.subtema || ''} onChange={e => setEditForm({...editForm, subtema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Subtema" />
+                </div>
+
+                <textarea 
+                  value={editForm.justificativa || ''} 
+                  onChange={e => setEditForm({...editForm, justificativa: e.target.value})}
+                  className="w-full p-3 border border-slate-300 rounded bg-white text-xs italic text-slate-600"
+                  placeholder="Comentário/Justificativa..."
+                  rows={3}
+                />
+                
+                <div className="grid grid-cols-2 gap-2">
+                    <input value={editForm.imagem_url || ''} onChange={e => setEditForm({...editForm, imagem_url: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem ENUNCIADO" />
+                    <input value={editForm.imagem_justificativa || ''} onChange={e => setEditForm({...editForm, imagem_justificativa: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem EXPLICAÇÃO" />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button onClick={handleInlineSave} className="flex-1 bg-green-600 text-white py-2 rounded font-black text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2"><Save size={14}/> Salvar Alterações</button>
+                  <button onClick={cancelEditing} className="px-4 py-2 border border-slate-300 rounded text-slate-500 font-bold text-xs uppercase hover:bg-slate-50">Cancelar</button>
+                </div>
               </div>
             ) : (
               <>
                 <div className="px-6 py-3 bg-slate-50/50 flex justify-between items-center border-b border-slate-200 font-black text-slate-700 text-[10px] uppercase">
-                  <div className="flex items-center gap-2"><span>Questão {idx + 1}</span><span className="text-slate-300 hidden sm:inline">|</span><div className="flex items-center gap-1.5 opacity-60">{q.origem === 'med53' ? <span className="text-[#00a884] flex items-center gap-1"><Star size={10} fill="currentColor"/> MED53</span> : <span className="text-indigo-600 flex items-center gap-1"><Archive size={10}/> BANCA</span>}<span className="text-slate-300">•</span><span className="truncate max-w-[150px] sm:max-w-none">{q.disciplina} › {q.tema}</span></div></div>
-                  <div className="flex items-center gap-3">{respondida && (<span className={respostas[q.id] === q.resposta_correta ? 'text-[#00a884]' : 'text-rose-600'}>{respostas[q.id] === q.resposta_correta ? '✓ ACERTOU' : '✕ ERROU'}</span>)}{isAdmin && (<div className="flex items-center gap-1 ml-2 border-l pl-3 border-slate-200"><button onClick={() => startEditing(q)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"><Edit size={14}/></button><button onClick={() => handleInlineDelete(q.id)} title="Apagar" className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"><Trash2 size={14}/></button></div>)}</div>
+                  <div className="flex items-center gap-2">
+                    <span>Questão {idx + 1}</span>
+                    <span className="text-slate-300 hidden sm:inline">|</span>
+                    <div className="flex items-center gap-1.5 opacity-60">
+                      {q.origem === 'med53' ? <span className="text-[#00a884] flex items-center gap-1"><Star size={10} fill="currentColor"/> MED53</span> : <span className="text-indigo-600 flex items-center gap-1"><Archive size={10}/> BANCA</span>}
+                      <span className="text-slate-300">•</span>
+                      <span className="truncate max-w-[150px] sm:max-w-none">{q.disciplina} › {q.tema}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {respondida && (<span className={respostas[q.id] === q.resposta_correta ? 'text-[#00a884]' : 'text-rose-600'}>{respostas[q.id] === q.resposta_correta ? '✓ ACERTOU' : '✕ ERROU'}</span>)}
+                    {isAdmin && (
+                      <div className="flex items-center gap-1 ml-2 border-l pl-3 border-slate-200">
+                         <button onClick={() => startEditing(q)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"><Edit size={14}/></button>
+                         <button onClick={() => handleInlineDelete(q.id)} title="Apagar" className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"><Trash2 size={14}/></button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="p-8">
                     <p className="text-[15.5px] font-bold text-slate-800 leading-relaxed mb-8">{q.enunciado}</p>
-                    {q.imagem_url && (<div className="mb-8 p-1.5 bg-slate-50 border border-slate-200 rounded-lg shadow-inner"><img src={q.imagem_url} alt="Referência" className="w-full max-h-80 object-contain mx-auto rounded-md" /></div>)}
-                    <div className="space-y-2.5">{q.opcoes.map((op: string, i: number) => { let style = "border-slate-200 bg-[#F9FAFB] text-slate-700 font-bold"; if (respondida) { if (i === q.resposta_correta) style = "bg-[#ECFDF5] border-[#00a884] text-[#065F46]"; else if (respostas[q.id] === i) style = "bg-[#FFF1F2] border-rose-200 text-rose-800"; else style = "opacity-40 grayscale border-transparent"; } return (<button key={i} disabled={respondida} onClick={async () => { setRespostas((p: any) => ({...p, [q.id]: i})); await supabase.from('historico_questoes').insert([{ user_id: user.id, questao_id: q.id, acertou: i === q.resposta_correta }]); await carregarStats(user.id); await atualizarStreak(user.id); }} className={`w-full p-4 border rounded-xl text-left flex items-center gap-4 transition-all text-[13.5px] ${style}`}><span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${respondida && i === q.resposta_correta ? 'bg-[#00a884] text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{String.fromCharCode(65+i)}</span>{op}</button>); })}</div>
+                    
+                    {/* IMAGEM DO ENUNCIADO (Sempre visível se existir) */}
+                    {q.imagem_url && (
+                        <div className="mb-8 p-1.5 bg-slate-50 border border-slate-200 rounded-lg shadow-inner">
+                            <img src={q.imagem_url} alt="Referência" className="w-full max-h-80 object-contain mx-auto rounded-md" />
+                        </div>
+                    )}
+                    
+                    <div className="space-y-2.5">
+                        {q.opcoes.map((op: string, i: number) => { 
+                            let style = "border-slate-200 bg-[#F9FAFB] text-slate-700 font-bold"; 
+                            if (respondida) { 
+                              if (i === q.resposta_correta) style = "bg-[#ECFDF5] border-[#00a884] text-[#065F46]"; 
+                              else if (respostas[q.id] === i) style = "bg-[#FFF1F2] border-rose-200 text-rose-800"; 
+                              else style = "opacity-40 grayscale border-transparent"; 
+                            } 
+                            return (
+                                <button key={i} disabled={respondida} 
+                                    onClick={async () => { 
+                                        setRespostas((p: any) => ({...p, [q.id]: i})); 
+                                        // Salva histórico E atualiza o Streak
+                                        await supabase.from('historico_questoes').insert([{ user_id: user.id, questao_id: q.id, acertou: i === q.resposta_correta }]); 
+                                        await carregarStats(user.id); 
+                                        await atualizarStreak(user.id); // <--- ATUALIZA O STREAK AQUI
+                                    }} 
+                                    className={`w-full p-4 border rounded-xl text-left flex items-center gap-4 transition-all text-[13.5px] ${style}`}>
+                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${respondida && i === q.resposta_correta ? 'bg-[#00a884] text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{String.fromCharCode(65+i)}</span>{op}
+                                </button>
+                            ); 
+                        })}
+                    </div>
+                    
                     {respondida && (
                       <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col items-end">
                         <div className="flex gap-4 items-center">
-                            <button onClick={() => setReportingId(isReporting ? null : q.id)} className="text-slate-400 font-bold text-[10px] uppercase flex items-center gap-1 hover:text-rose-500 transition-colors"><Flag size={12}/> Reportar Erro</button>
+                            {/* BOTÃO DE REPORTAR */}
+                            <button 
+                                onClick={() => setReportingId(isReporting ? null : q.id)} 
+                                className="text-slate-400 font-bold text-[10px] uppercase flex items-center gap-1 hover:text-rose-500 transition-colors"
+                            >
+                                <Flag size={12}/> Reportar Erro
+                            </button>
+
                             <button onClick={() => setExplicas((p: any) => ({...p, [q.id]: !p[q.id]}))} className="text-[#00a884] font-black text-[10px] uppercase flex items-center gap-2 hover:underline transition-all"><Eye size={16}/> {explicas[q.id] ? 'Fechar' : 'Ver Explicação'}</button>
                         </div>
-                        {isReporting && (<div className="mt-4 p-4 bg-rose-50 border border-rose-100 rounded-lg w-full animate-in fade-in slide-in-from-top-2"><span className="block text-xs font-black text-rose-800 mb-3">Qual o problema desta questão?</span><div className="grid grid-cols-2 gap-2">{['Gabarito Errado', 'Erro de Português', 'Imagem Ruim', 'Outro'].map(motivo => (<button key={motivo} onClick={() => handleReportIssue(q.id, motivo)} className="bg-white border border-rose-200 text-rose-700 py-2 rounded text-[10px] font-bold uppercase hover:bg-rose-600 hover:text-white transition-colors">{motivo}</button>))}</div></div>)}
-                        {explicas[q.id] && (<div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner animate-in fade-in"><div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>{q.justificativa}{q.imagem_justificativa && (<div className="mt-4 pt-4 border-t border-slate-200"><img src={q.imagem_justificativa} alt="Explicação Visual" className="w-full max-h-60 object-contain mx-auto rounded-md opacity-90" /></div>)}</div>)}
+
+                        {/* ÁREA DE REPORTE */}
+                        {isReporting && (
+                            <div className="mt-4 p-4 bg-rose-50 border border-rose-100 rounded-lg w-full animate-in fade-in slide-in-from-top-2">
+                                <span className="block text-xs font-black text-rose-800 mb-3">Qual o problema desta questão?</span>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {['Gabarito Errado', 'Erro de Português', 'Imagem Ruim', 'Outro'].map(motivo => (
+                                        <button 
+                                            key={motivo}
+                                            onClick={() => handleReportIssue(q.id, motivo)}
+                                            className="bg-white border border-rose-200 text-rose-700 py-2 rounded text-[10px] font-bold uppercase hover:bg-rose-600 hover:text-white transition-colors"
+                                        >
+                                            {motivo}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {explicas[q.id] && (
+                            <div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner animate-in fade-in">
+                                <div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>
+                                {q.justificativa}
+                                {/* IMAGEM DA EXPLICAÇÃO (Nova!) */}
+                                {q.imagem_justificativa && (
+                                    <div className="mt-4 pt-4 border-t border-slate-200">
+                                        <img src={q.imagem_justificativa} alt="Explicação Visual" className="w-full max-h-60 object-contain mx-auto rounded-md opacity-90" />
+                                    </div>
+                                )}
+                            </div>
+                        )}
                       </div>
                     )}
                 </div>
