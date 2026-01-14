@@ -5,7 +5,7 @@ import {
   Menu, X, Lock, Star, Target, ArrowLeft, BarChart3, Mail, List, 
   Save, CreditCard, AlertTriangle, Loader2, Archive, Play, 
   ChevronRight, ChevronLeft, Layout, FolderOpen, Folder, Clock,
-  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags // <--- Tags IMPORTADO
+  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO ---
@@ -19,22 +19,14 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 // --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO ---
 function embaralharQuestoes(listaQuestoes: any[]) {
   return listaQuestoes.map(q => {
-    // Se não tiver opções (ex: discursiva) ou admin estiver editando, não mexe
     if (!q.opcoes || q.opcoes.length === 0) return q;
-
-    // 1. Cria um array de objetos para rastrear qual é a correta
     const opcoesMapeadas = q.opcoes.map((texto: string, index: number) => ({
-      texto,
-      ehCorreta: index === q.resposta_correta
+      texto, ehCorreta: index === q.resposta_correta
     }));
-
-    // 2. Algoritmo de embaralhamento (Fisher-Yates)
     for (let i = opcoesMapeadas.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [opcoesMapeadas[i], opcoesMapeadas[j]] = [opcoesMapeadas[j], opcoesMapeadas[i]];
     }
-
-    // 3. Reconstrói a questão com a nova ordem e o novo índice da resposta certa
     return {
       ...q,
       opcoes: opcoesMapeadas.map((o: any) => o.texto),
@@ -52,10 +44,10 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'home' | 'feed'>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Streak (Foguinho)
+  // Streak
   const [streak, setStreak] = useState(0);
 
-  // Reporte de Erro (Estado do Modal)
+  // Reporte
   const [reportingId, setReportingId] = useState<number | null>(null);
 
   // Auth
@@ -66,37 +58,33 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState(''); 
 
-  // --- FILTROS ---
+  // Filtros
   const [allData, setAllData] = useState<any[]>([]); 
   const [filtroMapa, setFiltroMapa] = useState<any>({}); 
   const [activeDisc, setActiveDisc] = useState<string | null>(null); 
   const [activeTema, setActiveTema] = useState<string | null>(null); 
-
-  // Seleções
   const [selectedDiscs, setSelectedDiscs] = useState<string[]>([]);
   const [selectedTemas, setSelectedTemas] = useState<string[]>([]);
   const [selectedSubtemas, setSelectedSubtemas] = useState<string[]>([]);
   const [filterOrigem, setFilterOrigem] = useState<'todos' | 'originais' | 'antigas'>('todos');
 
-  // Dados do App & Paginação
+  // Dados
   const [questoes, setQuestoes] = useState<any[]>([]);
   const [respostas, setRespostas] = useState<Record<number, number>>({});
   const [explicas, setExplicas] = useState<Record<number, boolean>>({});
   const [stats, setStats] = useState({ totalSemana: 0, taxa: 0 });
-  
-  // PAGINAÇÃO
   const [page, setPage] = useState(0);
-  const [itemsPerPage, setItemsPerPage] = useState(25); // Padrão 25
+  const [itemsPerPage, setItemsPerPage] = useState(25); 
   const [hasMore, setHasMore] = useState(false);
 
-  // Admin Geral
+  // Admin
   const [abaAdmin, setAbaAdmin] = useState<'questoes' | 'usuarios' | 'reportes' | 'padronizacao' | null>(null);
   const [listaUsuarios, setListaUsuarios] = useState<any[]>([]);
-  const [listaReportes, setListaReportes] = useState<any[]>([]); 
-  const [listaTemasAdmin, setListaTemasAdmin] = useState<any[]>([]); // NOVA LISTA
+  const [listaReportes, setListaReportes] = useState<any[]>([]);
+  const [listaTemasAdmin, setListaTemasAdmin] = useState<any[]>([]);
   const [datasTemp, setDatasTemp] = useState<Record<string, string>>({});
 
-  // Form Admin (Cadastro Novo)
+  // Form Admin
   const [fEnun, setFEnun] = useState('');
   const [fOps, setFOps] = useState(['', '', '', '']);
   const [fCorr, setFCorr] = useState(0);
@@ -104,143 +92,86 @@ export default function App() {
   const [fTema, setFTema] = useState('');
   const [fSubtema, setFSubtema] = useState('');
   const [fJust, setFJust] = useState('');
-  const [fImg, setFImg] = useState(''); // Imagem do Enunciado
-  const [fImgJust, setFImgJust] = useState(''); // Imagem da Justificativa
+  const [fImg, setFImg] = useState(''); 
+  const [fImgJust, setFImgJust] = useState(''); 
   const [fOrigemCadastro, setFOrigemCadastro] = useState('med53'); 
 
-  // --- ADMIN IN-LINE (Edição Rápida) ---
+  // Edit Inline
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<any>({});
 
-  const startEditing = (q: any) => {
-    setEditingId(q.id);
-    setEditForm({ ...q }); 
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditForm({});
-  };
+  const startEditing = (q: any) => { setEditingId(q.id); setEditForm({ ...q }); };
+  const cancelEditing = () => { setEditingId(null); setEditForm({}); };
 
   const handleInlineDelete = async (id: number) => {
-    if (!confirm("Tem certeza absoluta que deseja APAGAR esta questão?")) return;
-    
+    if (!confirm("Tem certeza?")) return;
     const { error } = await supabase.from('questoes').delete().eq('id', id);
-    if (error) {
-      alert("Erro ao apagar: " + error.message);
-    } else {
-      setQuestoes(prev => prev.filter(q => q.id !== id));
-      alert("Questão apagada!");
-    }
+    if (error) alert("Erro: " + error.message);
+    else setQuestoes(prev => prev.filter(q => q.id !== id));
   };
 
   const handleInlineSave = async () => {
-    if (!editForm.enunciado || !editForm.disciplina) return alert("Preencha os campos obrigatórios.");
-    
+    if (!editForm.enunciado || !editForm.disciplina) return alert("Preencha campos.");
     setLoading(true);
     const { error } = await supabase.from('questoes').update({
-      enunciado: editForm.enunciado,
-      opcoes: editForm.opcoes,
-      resposta_correta: editForm.resposta_correta,
-      justificativa: editForm.justificativa,
-      disciplina: editForm.disciplina,
-      tema: editForm.tema,
-      subtema: editForm.subtema,
-      imagem_url: editForm.imagem_url,
-      imagem_justificativa: editForm.imagem_justificativa 
+      enunciado: editForm.enunciado, opcoes: editForm.opcoes, resposta_correta: editForm.resposta_correta,
+      justificativa: editForm.justificativa, disciplina: editForm.disciplina, tema: editForm.tema,
+      subtema: editForm.subtema, imagem_url: editForm.imagem_url, imagem_justificativa: editForm.imagem_justificativa 
     }).eq('id', editingId);
-
-    if (error) {
-      alert("Erro ao salvar: " + error.message);
-    } else {
+    if (error) alert("Erro: " + error.message);
+    else {
       setQuestoes(prev => prev.map(q => q.id === editingId ? editForm : q));
-      setEditingId(null);
-      setEditForm({});
-      alert("Questão atualizada com sucesso!");
+      setEditingId(null); setEditForm({});
     }
     setLoading(false);
   };
 
-  // --- FUNÇÃO DE REPORTAR ERRO ---
   const handleReportIssue = async (qId: number, motivo: string) => {
     if(!user) return;
     try {
-        await supabase.from('reportes').insert([{
-            user_id: user.id,
-            questao_id: qId,
-            motivo: motivo
-        }]);
-        alert("Obrigado! Vamos analisar o erro.");
-        setReportingId(null); // Fecha o menu
-    } catch (e) {
-        alert("Erro ao enviar reporte. Verifique se o SQL da tabela 'reportes' foi criado.");
-    }
+        await supabase.from('reportes').insert([{ user_id: user.id, questao_id: qId, motivo: motivo }]);
+        alert("Obrigado! Reporte enviado."); setReportingId(null);
+    } catch (e) { alert("Erro ao enviar reporte."); }
   };
 
-  // --- FUNÇÕES DE ADMIN: GERENCIAR REPORTES ---
   async function carregarReportes() {
-      const { data, error } = await supabase
-        .from('reportes')
-        .select('*, questoes(disciplina, tema)')
-        .order('created_at', { ascending: false });
-      
-      if (error) console.error("Erro reportes:", error);
+      const { data } = await supabase.from('reportes').select('*, questoes(disciplina, tema)').order('created_at', { ascending: false });
       setListaReportes(data || []);
   }
 
   async function resolverReporte(qId: number, reporteId: number) {
       setLoading(true);
-      const { data: questao } = await supabase.from('questoes').select('*').eq('id', qId).single();
-      
-      if (questao) {
-          setQuestoes([questao]);
-          setViewMode('feed');
-          setAbaAdmin(null);
-          startEditing(questao);
-      } else {
-          alert("Questão não encontrada (pode ter sido apagada).");
-      }
+      const { data } = await supabase.from('questoes').select('*').eq('id', qId).single();
+      if (data) { setQuestoes([data]); setViewMode('feed'); setAbaAdmin(null); startEditing(data); }
       setLoading(false);
   }
 
   async function apagarReporte(id: number) {
-      if(!confirm("Apagar este reporte da lista?")) return;
+      if(!confirm("Apagar reporte?")) return;
       await supabase.from('reportes').delete().eq('id', id);
-      carregarReportes(); // Recarrega a lista
+      carregarReportes();
   }
 
-  // --- FUNÇÕES DE ADMIN: PADRONIZAÇÃO ---
   async function carregarPadronizacao() {
       const { data } = await supabase.from('questoes').select('disciplina, tema').range(0, 9999);
       if(!data) return;
-
       const mapa: Record<string, { disciplina: string, tema: string, count: number }> = {};
-      
       data.forEach(item => {
           if(!item.tema) return;
           const key = `${item.disciplina}-${item.tema}`;
-          if(!mapa[key]) {
-              mapa[key] = { disciplina: item.disciplina, tema: item.tema, count: 0 };
-          }
+          if(!mapa[key]) mapa[key] = { disciplina: item.disciplina, tema: item.tema, count: 0 };
           mapa[key].count++;
       });
-
       const listaOrdenada = Object.values(mapa).sort((a,b) => a.disciplina.localeCompare(b.disciplina) || a.tema.localeCompare(b.tema));
       setListaTemasAdmin(listaOrdenada);
   }
 
-  // --- ATUALIZADO: EDITA DISCIPLINA E TEMA AO MESMO TEMPO ---
   async function editarTopico(discAntiga: string, temaAntigo: string, count: number) {
-      // 1. Pergunta a Nova Disciplina
       const novaDisc = prompt(`ATENÇÃO: Editando ${count} questões.\n\nQual a NOVA DISCIPLINA para "${temaAntigo}"?`, discAntiga);
-      if(!novaDisc) return; // Cancelou
-
-      // 2. Pergunta o Novo Tema
-      const novoTema = prompt(`Disciplina definida: ${novaDisc}\n\nQual o NOVO TEMA?`, temaAntigo);
-      if(!novoTema) return; // Cancelou
-
-      if (novaDisc === discAntiga && novoTema === temaAntigo) return; // Não mudou nada
-
+      if(!novaDisc) return;
+      const novoTema = prompt(`Disciplina: ${novaDisc}\n\nQual o NOVO TEMA?`, temaAntigo);
+      if(!novoTema) return;
+      if (novaDisc === discAntiga && novoTema === temaAntigo) return;
       if(!confirm(`Mover ${count} questões\nDE: ${discAntiga} > ${temaAntigo}\nPARA: ${novaDisc} > ${novoTema}\n\nConfirmar?`)) return;
 
       setLoading(true);
@@ -249,7 +180,7 @@ export default function App() {
           .eq('disciplina', discAntiga)
           .eq('tema', temaAntigo);
 
-      if(error) alert("Erro ao atualizar: " + error.message);
+      if(error) alert("Erro: " + error.message);
       else {
           alert("Sucesso! Tópicos atualizados.");
           await carregarPadronizacao();
@@ -258,39 +189,24 @@ export default function App() {
       setLoading(false);
   }
 
-  // --- HEARTBEAT ANTI-PREJUÍZO 💓 ---
   useEffect(() => {
-    if (!user) return; // Só roda se tiver usuário logado
-
+    if (!user) return; 
     const checkSessaoAtiva = async () => {
         const session = await supabase.auth.getSession();
         const tokenAtual = session.data.session?.access_token;
         if (!tokenAtual) return;
-
         const { data } = await supabase.from('perfis').select('last_session_id').eq('id', user.id).single();
-
         if (data?.last_session_id && data.last_session_id !== tokenAtual) {
-            console.warn("Sessão derrubada por novo login.");
-            setSessaoInvalida(true); // Ativa a tela vermelha
-            supabase.auth.signOut(); // Desloga do Supabase
+            setSessaoInvalida(true); supabase.auth.signOut(); 
         }
     };
-
     const intervalo = setInterval(checkSessaoAtiva, 5000);
     return () => clearInterval(intervalo);
   }, [user]);
 
-  // --- INICIALIZAÇÃO BLINDADA COM TIMEOUT ---
   useEffect(() => {
     let mounted = true;
-
-    // VÁLVULA DE SEGURANÇA: Se em 8 segundos não carregar, libera a tela de login.
-    const safetyTimer = setTimeout(() => {
-        if (mounted && loading) {
-            console.log("Timeout de segurança ativado.");
-            setLoading(false);
-        }
-    }, 8000);
+    const safetyTimer = setTimeout(() => { if (mounted && loading) setLoading(false); }, 8000); 
 
     const init = async () => {
         try {
@@ -301,10 +217,7 @@ export default function App() {
             } else if (mounted) {
                 resetEstadoTotal();
             }
-        } catch (error) {
-            console.error("Erro no init:", error);
-            if (mounted) resetEstadoTotal();
-        }
+        } catch { if (mounted) resetEstadoTotal(); }
     };
     init();
 
@@ -321,6 +234,7 @@ export default function App() {
     return () => { mounted = false; clearTimeout(safetyTimer); subscription.unsubscribe(); };
   }, []);
 
+  // --- CORREÇÃO MATEMÁTICA AQUI ---
   const contagemPrevia = useMemo(() => {
     let total = 0;
     selectedDiscs.forEach(d => {
@@ -329,14 +243,15 @@ export default function App() {
         if (selectedTemas.includes(t)) {
           const dadosTema = filtroMapa[d].temas[t];
           const listaSubtemas = Object.keys(dadosTema.subtemas);
+          
+          // SOMA AS QUESTÕES "SEM SUBTEMA" (Aquelas que a gente estava perdendo)
+          total += (dadosTema.semSubtema || 0);
+
           if (listaSubtemas.length > 0) {
-            listaSubtemas.forEach(sub => {
-              if (selectedSubtemas.includes(sub)) {
-                total += dadosTema.subtemas[sub];
-              }
+            // SOMA AS QUESTÕES DOS SUBTEMAS SELECIONADOS
+            listaSubtemas.forEach(sub => { 
+                if (selectedSubtemas.includes(sub)) total += dadosTema.subtemas[sub]; 
             });
-          } else {
-            total += dadosTema.total;
           }
         }
       });
@@ -351,41 +266,23 @@ export default function App() {
   };
 
   async function registrarSessaoUnica(uid: string, token: string) {
-    try {
-        await supabase.from('perfis').update({ last_session_id: token }).eq('id', uid);
-    } catch (e) { console.error("Erro ao registrar sessão:", e); }
+    try { await supabase.from('perfis').update({ last_session_id: token }).eq('id', uid); } catch (e) {}
   }
 
   async function inicializar(u: any, token: string) {
     try {
       const { data: perfil } = await supabase.from('perfis').select('*').eq('id', u.id).maybeSingle();
-      
-      if (!perfil) console.warn("Perfil não encontrado no init.");
-
       if (perfil?.last_session_id && perfil.last_session_id !== token) {
-        setSessaoInvalida(true); 
-        await supabase.auth.signOut(); 
-        return;
+        setSessaoInvalida(true); await supabase.auth.signOut(); return;
       }
-
       const { data: ass } = await supabase.from('assinaturas').select('*').eq('user_id', u.id).maybeSingle();
-      
-      setUser(u); 
-      setIsAdmin(perfil?.is_admin || false);
-      setStreak(perfil?.streak_atual || 0);
-
+      setUser(u); setIsAdmin(perfil?.is_admin || false); setStreak(perfil?.streak_atual || 0);
       const isValida = ass?.status === 'ativo' && new Date(ass.data_expiracao) > new Date();
       setAssinatura(isValida ? ass : { status: 'expirado' });
-      
       await buscarDadosEstruturais();
       await carregarStats(u.id);
-      if (perfil?.is_admin) {
-        carregarListaUsuarios();
-      }
-    } catch (e) { 
-        console.error(e);
-        handleLogout(true); 
-    } finally { setLoading(false); }
+      if (perfil?.is_admin) { carregarListaUsuarios(); }
+    } catch { handleLogout(true); } finally { setLoading(false); }
   }
 
   async function atualizarStreak(uid: string) {
@@ -422,30 +319,38 @@ export default function App() {
   }
 
   async function buscarDadosEstruturais() {
-    // TEM QUE TER O .range(0, 9999) AQUI
-    const { data } = await supabase
-        .from('questoes')
-        .select('disciplina, tema, subtema, origem')
-        .range(0, 9999); 
+    const { data } = await supabase.from('questoes').select('disciplina, tema, subtema, origem').range(0, 9999);
     setAllData(data || []);
   }
 
   useEffect(() => {
     const mapa: any = {};
     allData.forEach(q => {
-      if (!q.disciplina) return;
+      // Cria nome para fantasmas
+      const disciplinaNome = q.disciplina || '⚠️ SEM DISCIPLINA'; 
+      
       if (filterOrigem === 'originais' && q.origem !== 'med53') return;
       if (filterOrigem === 'antigas' && q.origem === 'med53') return;
       
-      if (!mapa[q.disciplina]) mapa[q.disciplina] = { total: 0, temas: {} };
-      mapa[q.disciplina].total++; 
+      if (!mapa[disciplinaNome]) mapa[disciplinaNome] = { total: 0, temas: {} };
+      mapa[disciplinaNome].total++; 
 
       if (q.tema) {
-        if (!mapa[q.disciplina].temas[q.tema]) mapa[q.disciplina].temas[q.tema] = { total: 0, subtemas: {} };
-        mapa[q.disciplina].temas[q.tema].total++; 
+        // Inicializa o objeto do tema
+        if (!mapa[disciplinaNome].temas[q.tema]) {
+            mapa[disciplinaNome].temas[q.tema] = { total: 0, subtemas: {}, semSubtema: 0 };
+        }
+        mapa[disciplinaNome].temas[q.tema].total++; 
+        
+        // AQUI ESTAVA O PROBLEMA: Agora contamos quem NÃO TEM subtema
         if (q.subtema) {
-            if (!mapa[q.disciplina].temas[q.tema].subtemas[q.subtema]) mapa[q.disciplina].temas[q.tema].subtemas[q.subtema] = 0;
-            mapa[q.disciplina].temas[q.tema].subtemas[q.subtema]++;
+            if (!mapa[disciplinaNome].temas[q.tema].subtemas[q.subtema]) {
+                mapa[disciplinaNome].temas[q.tema].subtemas[q.subtema] = 0;
+            }
+            mapa[disciplinaNome].temas[q.tema].subtemas[q.subtema]++;
+        } else {
+            // Conta as órfãs de subtema
+            mapa[disciplinaNome].temas[q.tema].semSubtema++;
         }
       }
     });
@@ -468,7 +373,6 @@ export default function App() {
     });
   }, [filtroMapa]); 
 
-  // --- BUSCA COM PAGINAÇÃO E EMBARALHAMENTO ---
   async function buscarQuestoes(novaPagina = 0) {
     if (!user) return;
     setLoading(true);
@@ -476,52 +380,36 @@ export default function App() {
 
     let q = supabase.from('questoes').select('id, enunciado, opcoes, resposta_correta, disciplina, tema, subtema, imagem_url, justificativa, imagem_justificativa, origem', { count: 'estimated' });
     
-    // Filtros
     if (selectedDiscs.length > 0) q = q.in('disciplina', selectedDiscs);
     if (selectedTemas.length > 0) q = q.in('tema', selectedTemas);
     if (filterOrigem === 'originais') q = q.eq('origem', 'med53');
     if (filterOrigem === 'antigas') q = q.neq('origem', 'med53');
 
-    // Paginação
     const inicio = novaPagina * itemsPerPage;
     const fim = inicio + itemsPerPage - 1;
     q = q.range(inicio, fim);
 
     const { data, count, error } = await q;
     
-    if (error) {
-      console.error('Erro:', error);
-      setQuestoes([]);
-    } else {
-      // 1. Filtragem de subtemas no cliente
+    if (error) { setQuestoes([]); } else {
       const filtradas = (data || []).filter(item => {
-          if (item.subtema) {
-              return selectedSubtemas.some(selected => 
-                  selected.trim().toLowerCase() === item.subtema.trim().toLowerCase()
-              );
-          }
-          return true;
+          if (item.subtema) return selectedSubtemas.some(selected => selected.trim().toLowerCase() === item.subtema.trim().toLowerCase());
+          return true; // Mantém quem não tem subtema!
       });
-
-      // 2. APLICAR O EMBARALHAMENTO AQUI
-      const finais = isAdmin ? filtradas : embaralharQuestoes(filtradas);
-
-      setQuestoes(finais);
+      setQuestoes(isAdmin ? filtradas : embaralharQuestoes(filtradas));
       setHasMore(count ? (inicio + itemsPerPage) < count : false);
     }
     setLoading(false);
   }
 
-  // --- FUNÇÕES DE SELEÇÃO DE FILTROS ---
+  // --- FILTROS COMPLETOS ---
   const handleSelectDisc = (disc: string, checked: boolean) => {
     const newDiscs = checked ? [...selectedDiscs, disc] : selectedDiscs.filter(d => d !== disc);
     setSelectedDiscs(newDiscs);
-
     if (filtroMapa[disc]) {
         const temasDaDisc = Object.keys(filtroMapa[disc].temas);
         let novosTemas = [...selectedTemas];
         let novosSubtemas = [...selectedSubtemas];
-
         temasDaDisc.forEach(t => {
             if (checked) {
                 if (!novosTemas.includes(t)) novosTemas.push(t);
@@ -540,10 +428,8 @@ export default function App() {
 
   const handleSelectTema = (disc: string, tema: string, checked: boolean) => {
     if (checked && !selectedDiscs.includes(disc)) setSelectedDiscs([...selectedDiscs, disc]);
-    
     const newTemas = checked ? [...selectedTemas, tema] : selectedTemas.filter(t => t !== tema);
     setSelectedTemas(newTemas);
-
     if (filtroMapa[disc]?.temas[tema]) {
         const subs = Object.keys(filtroMapa[disc].temas[tema].subtemas);
         let novosSubs = [...selectedSubtemas];
@@ -580,10 +466,7 @@ export default function App() {
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        // FORÇA A ENTRADA: Registra a sessão imediatamente ao logar com sucesso
-        if (data.user) {
-            await registrarSessaoUnica(data.user.id, data.session!.access_token);
-        }
+        if(data.user) await registrarSessaoUnica(data.user.id, data.session!.access_token);
       }
     } catch (err: any) { alert(err.message); } finally { setLoading(false); }
   };
@@ -592,7 +475,6 @@ export default function App() {
     resetEstadoTotal();
     localStorage.clear(); 
     sessionStorage.clear();
-    
     if (!forced) setLoading(true);
     try { await supabase.auth.signOut(); } catch {} 
     finally { window.location.href = "/"; }
@@ -604,12 +486,9 @@ export default function App() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#FBFBFB] gap-4">
         <Loader2 className="animate-spin text-[#00a884]" size={24} />
         <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">Carregando MED53...</span>
-        {/* AVISO DE CARREGAMENTO PARA O USUÁRIO ENTENDER A DEMORA */}
         <div className="flex flex-col items-center gap-2 mt-4 animate-in fade-in slide-in-from-bottom-2 duration-1000">
            <Server size={16} className="text-slate-300 animate-pulse"/>
-           <p className="text-[10px] text-slate-400 text-center max-w-[250px]">
-             Demorando? O servidor pode estar "acordando".<br/>Isso leva cerca de 10-20 segundos.
-           </p>
+           <p className="text-[10px] text-slate-400 text-center max-w-[250px]">Demorando? O servidor pode estar "acordando".<br/>Isso leva cerca de 10-20 segundos.</p>
         </div>
     </div>
   );
@@ -619,13 +498,7 @@ export default function App() {
       <div className="bg-white p-10 rounded-3xl border border-slate-200 w-full max-w-xs shadow-2xl animate-in zoom-in-95">
         <h1 className="text-3xl font-black text-slate-900 mb-2 text-center tracking-tighter italic">MED<span className="text-[#00a884] not-italic">53</span></h1>
         <p className="text-center text-slate-500 text-[10px] uppercase font-black mb-6 tracking-widest">{isForgot ? 'Recuperar Acesso' : (isSignUp ? 'Criar Nova Conta' : 'Acesso Acadêmico')}</p>
-        
-        {/* AVISO DE SEGURANÇA (NOVO) */}
-        <div className="mb-6 p-3 bg-amber-50 border border-amber-100 rounded-xl flex gap-3 items-start">
-            <ShieldAlert size={16} className="text-amber-500 shrink-0 mt-0.5"/>
-            <p className="text-[10px] text-amber-800 font-bold leading-tight">Conta pessoal. Acessos simultâneos bloqueiam a conexão anterior.</p>
-        </div>
-
+        <div className="mb-6 p-3 bg-amber-50 border border-amber-100 rounded-xl flex gap-3 items-start"><ShieldAlert size={16} className="text-amber-500 shrink-0 mt-0.5"/><p className="text-[10px] text-amber-800 font-bold leading-tight">Conta pessoal. Acessos simultâneos bloqueiam a conexão anterior.</p></div>
         <form onSubmit={handleAuth} className="space-y-4">
           <div className="relative"><Mail className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="email" placeholder="E-mail" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={email} onChange={e => setEmail(e.target.value)} required /></div>
           {isSignUp && <div className="relative animate-in slide-in-from-top-2"><Mail className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="email" placeholder="Confirme E-mail" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={confirmEmail} onChange={e => setConfirmEmail(e.target.value)} required /></div>}
@@ -648,22 +521,16 @@ export default function App() {
       <nav className="shrink-0 bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-2">
           {viewMode === 'feed' && (
-             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
-                 {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-             </button>
+             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
           )}
-
           {viewMode === 'feed' && <button onClick={() => { setViewMode('home'); setPage(0); }} className="p-2 mr-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><ArrowLeft size={16}/></button>}
           <h1 onClick={() => setAbaAdmin(null)} className="text-lg font-black text-slate-900 tracking-tighter cursor-pointer">MED<span className="text-[#00a884]">53</span></h1>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
-          
-          {/* FOGUINHO (STREAK) */}
           <div className="flex items-center gap-1 bg-orange-50 text-orange-600 px-3 py-1 rounded-full border border-orange-100" title="Dias seguidos de estudo">
               <Flame size={14} fill="currentColor" className={streak > 0 ? "animate-pulse" : "opacity-50"} />
               <span className="font-black text-[10px]">{streak}</span>
           </div>
-
           {isAdmin && (<div className="hidden sm:flex gap-2">
               <button onClick={() => setAbaAdmin(abaAdmin === 'questoes' ? null : 'questoes')} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all ${abaAdmin === 'questoes' ? 'bg-[#00a884] text-white' : 'text-slate-600'}`}>Questões</button>
               <button onClick={() => setAbaAdmin(abaAdmin === 'usuarios' ? null : 'usuarios')} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all ${abaAdmin === 'usuarios' ? 'bg-[#00a884] text-white' : 'text-slate-600'}`}>Alunos</button>
@@ -674,18 +541,10 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Container Principal */}
       <div className="flex-1 flex overflow-hidden relative">
-        
         {viewMode === 'feed' && !abaAdmin && (
           <>
-            {mobileMenuOpen && (
-                <div 
-                    className="fixed inset-0 bg-black/40 z-30 md:hidden backdrop-blur-sm transition-opacity"
-                    onClick={() => setMobileMenuOpen(false)}
-                />
-            )}
-
+            {mobileMenuOpen && ( <div className="fixed inset-0 bg-black/40 z-30 md:hidden backdrop-blur-sm transition-opacity" onClick={() => setMobileMenuOpen(false)} /> )}
             <aside className={`fixed md:relative inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 transition-transform duration-300 md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="p-6 overflow-y-auto h-full">
                 <div className="flex items-center justify-between mb-8 border-b pb-2">
@@ -711,125 +570,42 @@ export default function App() {
         )}
 
         <main className={`flex-1 bg-[#FBFBFB] ${viewMode === 'home' ? 'h-full relative' : 'overflow-y-auto'}`}>
-          
           {viewMode === 'home' && !abaAdmin && (
             <div className="h-full flex flex-col animate-in fade-in">
               <div className="shrink-0 bg-white border-b border-slate-200 p-6 flex flex-col md:flex-row justify-between items-center gap-4 z-30 shadow-sm">
                 <div>
                   <h2 className="text-2xl font-black text-slate-900 tracking-tight">Filtros Inteligentes</h2>
                   <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 font-medium overflow-x-auto whitespace-nowrap">
-                    <Layout size={14}/>
-                    <span>Início</span>
-                    {activeDisc && <><ChevronRight size={12}/> <span className="text-slate-800 font-bold">{activeDisc}</span></>}
-                    {activeTema && <><ChevronRight size={12}/> <span className="text-slate-800 font-bold">{activeTema}</span></>}
+                    <Layout size={14}/><span>Início</span>{activeDisc && <><ChevronRight size={12}/> <span className="text-slate-800 font-bold">{activeDisc}</span></>}{activeTema && <><ChevronRight size={12}/> <span className="text-slate-800 font-bold">{activeTema}</span></>}
                   </div>
                 </div>
-                
                 <div className="bg-slate-100 p-1 rounded-lg flex shrink-0">
                       <button onClick={() => setFilterOrigem('todos')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'todos' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Todas</button>
                       <button onClick={() => setFilterOrigem('originais')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'originais' ? 'bg-[#00a884] text-white shadow-sm' : 'text-slate-500'}`}>Originais</button>
                       <button onClick={() => setFilterOrigem('antigas')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'antigas' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}>Antigas</button>
                 </div>
               </div>
-
               <div className="flex-1 overflow-hidden flex flex-col md:flex-row relative bg-white pb-[70px]">
                 <div className="w-full md:w-1/3 border-r border-slate-200 bg-white flex flex-col overflow-hidden h-full">
-                    <div className="shrink-0 p-3 bg-slate-50 border-b font-black text-[10px] text-slate-500 uppercase tracking-widest flex justify-between">
-                        <span>1. Disciplinas</span>
-                        <span>{Object.keys(filtroMapa).length} Opções</span>
-                    </div>
-                    <div className="overflow-y-auto flex-1 p-2 space-y-1">
-                        {Object.keys(filtroMapa).length > 0 ? Object.keys(filtroMapa).sort().map(d => (
-                            <div key={d} 
-                                onClick={() => { setActiveDisc(d); setActiveTema(null); }}
-                                className={`group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all border ${activeDisc === d ? 'bg-blue-50 border-blue-200' : 'bg-white border-transparent hover:bg-slate-50'}`}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div onClick={(e) => { e.stopPropagation(); handleSelectDisc(d, !selectedDiscs.includes(d)); }} 
-                                         className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${selectedDiscs.includes(d) ? 'bg-[#00a884] border-[#00a884]' : 'border-slate-300 hover:border-[#00a884]'}`}>
-                                         {selectedDiscs.includes(d) && <Check size={12} className="text-white"/>}
-                                    </div>
-                                    <span className={`text-xs font-bold ${activeDisc === d ? 'text-blue-700' : 'text-slate-700'}`}>{d}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[9px] font-black text-slate-300 bg-slate-50 px-1.5 py-0.5 rounded">{filtroMapa[d].total}</span>
-                                    <ChevronRight size={14} className={activeDisc === d ? 'text-blue-500' : 'text-slate-300'}/>
-                                </div>
-                            </div>
-                        )) : <div className="p-4 text-center text-slate-400 text-xs italic">Carregando...</div>}
-                    </div>
+                    <div className="shrink-0 p-3 bg-slate-50 border-b font-black text-[10px] text-slate-500 uppercase tracking-widest flex justify-between"><span>1. Disciplinas</span><span>{Object.keys(filtroMapa).length} Opções</span></div>
+                    <div className="overflow-y-auto flex-1 p-2 space-y-1">{Object.keys(filtroMapa).length > 0 ? Object.keys(filtroMapa).sort().map(d => (<div key={d} onClick={() => { setActiveDisc(d); setActiveTema(null); }} className={`group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all border ${activeDisc === d ? 'bg-blue-50 border-blue-200' : 'bg-white border-transparent hover:bg-slate-50'}`}><div className="flex items-center gap-3"><div onClick={(e) => { e.stopPropagation(); handleSelectDisc(d, !selectedDiscs.includes(d)); }} className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${selectedDiscs.includes(d) ? 'bg-[#00a884] border-[#00a884]' : 'border-slate-300 hover:border-[#00a884]'}`}>{selectedDiscs.includes(d) && <Check size={12} className="text-white"/>}</div><span className={`text-xs font-bold ${activeDisc === d ? 'text-blue-700' : 'text-slate-700'}`}>{d}</span></div><div className="flex items-center gap-2"><span className="text-[9px] font-black text-slate-300 bg-slate-50 px-1.5 py-0.5 rounded">{filtroMapa[d].total}</span><ChevronRight size={14} className={activeDisc === d ? 'text-blue-500' : 'text-slate-300'}/></div></div>)) : <div className="p-4 text-center text-slate-400 text-xs italic">Carregando...</div>}</div>
                 </div>
-
                 <div className={`w-full md:w-1/3 border-r border-slate-200 bg-slate-50/50 flex flex-col overflow-hidden h-full transition-all ${!activeDisc ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
-                    <div className="shrink-0 p-3 bg-slate-100 border-b font-black text-[10px] text-slate-500 uppercase tracking-widest flex justify-between">
-                        <span>2. Temas {activeDisc ? `de ${activeDisc}` : ''}</span>
-                        {activeDisc && filtroMapa[activeDisc] && <span>{Object.keys(filtroMapa[activeDisc].temas).length} Opções</span>}
-                    </div>
-                    <div className="overflow-y-auto flex-1 p-2 space-y-1">
-                        {activeDisc && filtroMapa[activeDisc] ? Object.keys(filtroMapa[activeDisc].temas).sort().map(t => (
-                            <div key={t} 
-                                onClick={() => setActiveTema(t)}
-                                className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all border ${activeTema === t ? 'bg-white shadow-sm border-blue-200' : 'border-transparent hover:bg-white/60'}`}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div onClick={(e) => { e.stopPropagation(); handleSelectTema(activeDisc, t, !selectedTemas.includes(t)); }} 
-                                         className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${selectedTemas.includes(t) ? 'bg-[#00a884] border-[#00a884]' : 'border-slate-300 hover:border-[#00a884]'}`}>
-                                         {selectedTemas.includes(t) && <Check size={10} className="text-white"/>}
-                                    </div>
-                                    <span className={`text-xs font-medium ${activeTema === t ? 'text-blue-700 font-bold' : 'text-slate-600'}`}>{t}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[9px] font-bold text-slate-400">{filtroMapa[activeDisc].temas[t].total}</span>
-                                    {Object.keys(filtroMapa[activeDisc].temas[t].subtemas).length > 0 && <ChevronRight size={14} className="text-slate-300"/>}
-                                </div>
-                            </div>
-                        )) : <div className="h-full flex flex-col items-center justify-center text-slate-300 text-xs font-medium"><FolderOpen size={32} className="mb-2 opacity-20"/> Selecione uma disciplina</div>}
-                    </div>
+                    <div className="shrink-0 p-3 bg-slate-100 border-b font-black text-[10px] text-slate-500 uppercase tracking-widest flex justify-between"><span>2. Temas {activeDisc ? `de ${activeDisc}` : ''}</span>{activeDisc && filtroMapa[activeDisc] && <span>{Object.keys(filtroMapa[activeDisc].temas).length} Opções</span>}</div>
+                    <div className="overflow-y-auto flex-1 p-2 space-y-1">{activeDisc && filtroMapa[activeDisc] ? Object.keys(filtroMapa[activeDisc].temas).sort().map(t => (<div key={t} onClick={() => setActiveTema(t)} className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all border ${activeTema === t ? 'bg-white shadow-sm border-blue-200' : 'border-transparent hover:bg-white/60'}`}><div className="flex items-center gap-3"><div onClick={(e) => { e.stopPropagation(); handleSelectTema(activeDisc, t, !selectedTemas.includes(t)); }} className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${selectedTemas.includes(t) ? 'bg-[#00a884] border-[#00a884]' : 'border-slate-300 hover:border-[#00a884]'}`}>{selectedTemas.includes(t) && <Check size={10} className="text-white"/>}</div><span className={`text-xs font-medium ${activeTema === t ? 'text-blue-700 font-bold' : 'text-slate-600'}`}>{t}</span></div><div className="flex items-center gap-2"><span className="text-[9px] font-bold text-slate-400">{filtroMapa[activeDisc].temas[t].total}</span>{Object.keys(filtroMapa[activeDisc].temas[t].subtemas).length > 0 && <ChevronRight size={14} className="text-slate-300"/>}</div></div>)) : <div className="h-full flex flex-col items-center justify-center text-slate-300 text-xs font-medium"><FolderOpen size={32} className="mb-2 opacity-20"/> Selecione uma disciplina</div>}</div>
                 </div>
-
                 <div className={`w-full md:w-1/3 bg-[#FBFBFB] flex flex-col overflow-hidden h-full transition-all ${!activeTema ? 'opacity-50 pointer-events-none' : ''}`}>
-                    <div className="shrink-0 p-3 bg-slate-100 border-b font-black text-[10px] text-slate-500 uppercase tracking-widest">
-                        3. Subtemas
-                    </div>
-                    <div className="overflow-y-auto flex-1 p-2 space-y-1">
-                         {activeDisc && activeTema && filtroMapa[activeDisc]?.temas[activeTema] ? (
-                            Object.keys(filtroMapa[activeDisc].temas[activeTema].subtemas).length > 0 ? 
-                            Object.keys(filtroMapa[activeDisc].temas[activeTema].subtemas).sort().map(s => (
-                                <label key={s} className="flex items-center gap-3 p-3 rounded-lg hover:bg-white cursor-pointer transition-colors">
-                                    <div onClick={(e) => { e.stopPropagation(); handleSelectSubtema(activeDisc, activeTema, s, !selectedSubtemas.includes(s)); }} 
-                                         className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${selectedSubtemas.includes(s) ? 'bg-[#00a884] border-[#00a884]' : 'border-slate-300 hover:border-[#00a884]'}`}>
-                                         {selectedSubtemas.includes(s) && <Check size={10} className="text-white"/>}
-                                    </div>
-                                    <span className={`text-xs ${selectedSubtemas.includes(s) ? 'text-slate-800 font-bold' : 'text-slate-500'}`}>{s}</span>
-                                    <span className="ml-auto text-[9px] bg-slate-100 text-slate-400 px-1.5 rounded">{filtroMapa[activeDisc].temas[activeTema].subtemas[s]}</span>
-                                </label>
-                            )) : <div className="p-8 text-center text-slate-400 text-xs italic">Este tema não possui subdivisões.</div>
-                         ) : <div className="h-full flex flex-col items-center justify-center text-slate-300 text-xs font-medium"><Folder size={32} className="mb-2 opacity-20"/> Selecione um tema</div>}
-                    </div>
+                    <div className="shrink-0 p-3 bg-slate-100 border-b font-black text-[10px] text-slate-500 uppercase tracking-widest">3. Subtemas</div>
+                    <div className="overflow-y-auto flex-1 p-2 space-y-1">{activeDisc && activeTema && filtroMapa[activeDisc]?.temas[activeTema] ? (Object.keys(filtroMapa[activeDisc].temas[activeTema].subtemas).length > 0 ? Object.keys(filtroMapa[activeDisc].temas[activeTema].subtemas).sort().map(s => (<label key={s} className="flex items-center gap-3 p-3 rounded-lg hover:bg-white cursor-pointer transition-colors"><div onClick={(e) => { e.stopPropagation(); handleSelectSubtema(activeDisc, activeTema, s, !selectedSubtemas.includes(s)); }} className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${selectedSubtemas.includes(s) ? 'bg-[#00a884] border-[#00a884]' : 'border-slate-300 hover:border-[#00a884]'}`}>{selectedSubtemas.includes(s) && <Check size={10} className="text-white"/>}</div><span className={`text-xs ${selectedSubtemas.includes(s) ? 'text-slate-800 font-bold' : 'text-slate-500'}`}>{s}</span><span className="ml-auto text-[9px] bg-slate-100 text-slate-400 px-1.5 rounded">{filtroMapa[activeDisc].temas[activeTema].subtemas[s]}</span></label>)) : <div className="p-8 text-center text-slate-400 text-xs italic">Este tema não possui subdivisões.</div>) : <div className="h-full flex flex-col items-center justify-center text-slate-300 text-xs font-medium"><Folder size={32} className="mb-2 opacity-20"/> Selecione um tema</div>}</div>
                 </div>
-
               </div>
-
               <div className="absolute bottom-0 left-0 w-full h-[70px] bg-white border-t border-slate-200 px-6 flex justify-between items-center shadow-[0_-4px_20px_rgba(0,0,0,0.05)] z-50">
                 <div className="flex items-center gap-6">
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-black text-slate-900 animate-in fade-in leading-none">{contagemPrevia}</span>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-none">Questões</span>
-                    </div>
-                    <div className="h-8 w-px bg-slate-200 hidden md:block"></div>
-                    <div className="hidden md:block text-[11px] font-medium text-slate-500">
-                        {selectedDiscs.length === 0 ? <span className="text-slate-400 italic">Nenhum filtro</span> : <span>{selectedDiscs.length} Disciplinas • {selectedTemas.length} Temas</span>}
-                    </div>
+                    <div className="flex items-baseline gap-2"><span className="text-2xl font-black text-slate-900 animate-in fade-in leading-none">{contagemPrevia}</span><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-none">Questões</span></div>
+                    <div className="h-8 w-px bg-slate-200 hidden md:block"></div><div className="hidden md:block text-[11px] font-medium text-slate-500">{selectedDiscs.length === 0 ? <span className="text-slate-400 italic">Nenhum filtro</span> : <span>{selectedDiscs.length} Disciplinas • {selectedTemas.length} Temas</span>}</div>
                 </div>
-                
-                <button 
-                    onClick={() => { if(selectedDiscs.length > 0) { buscarQuestoes(0); setViewMode('feed'); } else { alert("Selecione pelo menos uma disciplina."); }}}
-                    className={`h-10 px-6 rounded-full font-black uppercase text-[10px] tracking-wide transition-all flex items-center gap-2 ${selectedDiscs.length > 0 ? 'bg-[#00a884] text-white hover:scale-105 shadow-lg shadow-[#00a884]/30' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                >
-                    Gerar Caderno <Play size={12} fill="currentColor"/>
-                </button>
+                <button onClick={() => { if(selectedDiscs.length > 0) { buscarQuestoes(0); setViewMode('feed'); } else { alert("Selecione pelo menos uma disciplina."); }}} className={`h-10 px-6 rounded-full font-black uppercase text-[10px] tracking-wide transition-all flex items-center gap-2 ${selectedDiscs.length > 0 ? 'bg-[#00a884] text-white hover:scale-105 shadow-lg shadow-[#00a884]/30' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>Gerar Caderno <Play size={12} fill="currentColor"/></button>
               </div>
-
             </div>
           )}
 
@@ -901,8 +677,7 @@ export default function App() {
                       const hoje = new Date();
                       const exp = u.assinatura?.data_expiracao ? new Date(u.assinatura.data_expiracao) : null;
                       const dataFormatada = exp ? exp.toLocaleDateString('pt-BR') : '-';
-                      let textoPrazo = null;
-                      let corPrazo = '';
+                      let textoPrazo = null; let corPrazo = '';
                       if (exp) {
                           const diff = exp.getTime() - hoje.getTime();
                           const dias = Math.ceil(diff / (86400000));
@@ -914,10 +689,7 @@ export default function App() {
                         <tr key={u.id} className="hover:bg-slate-50/30">
                           <td className="p-4 font-bold text-slate-800 text-[12px]">{u.email}</td>
                           <td className="p-4"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${u.assinatura?.status === 'ativo' ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'}`}>{u.assinatura?.status || 'pendente'}</span></td>
-                          <td className="p-4">
-                              <div className="text-[11px] font-mono text-slate-600 mb-0.5 flex items-center gap-1.5"><Clock size={12} className="opacity-50"/> {dataFormatada}</div>
-                              {textoPrazo && <div className={`text-[9px] font-black uppercase tracking-wide ${corPrazo}`}>{textoPrazo}</div>}
-                          </td>
+                          <td className="p-4"><div className="text-[11px] font-mono text-slate-600 mb-0.5 flex items-center gap-1.5"><Clock size={12} className="opacity-50"/> {dataFormatada}</div>{textoPrazo && <div className={`text-[9px] font-black uppercase tracking-wide ${corPrazo}`}>{textoPrazo}</div>}</td>
                           <td className="p-4"><input type="date" className="border border-slate-300 rounded p-1.5 text-[11px]" onChange={(e) => setDatasTemp({...datasTemp, [u.id]: e.target.value})}/></td>
                           <td className="p-4"><button onClick={() => definirValidadeManual(u.id)} className="flex items-center gap-1 bg-[#00a884] text-white px-3 py-1.5 rounded hover:bg-[#008f6f] text-[10px] font-black uppercase transition-all"><Save size={12} /> Salvar</button></td>
                         </tr>
@@ -1006,171 +778,34 @@ function questionsList(questoes: any[], respostas: any, editingId: any, editForm
 
         return (
           <div key={q.id} className={`bg-white border-l-4 ${isEditing ? 'border-orange-500 ring-2 ring-orange-200' : 'border-[#00a884]'} border-t border-b border-r border-slate-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow mb-8`}>
-            
             {isEditing ? (
               <div className="p-6 bg-orange-50 space-y-4 animate-in fade-in">
-                <div className="flex justify-between items-center mb-4 border-b border-orange-200 pb-2">
-                  <span className="font-black text-orange-600 uppercase text-xs tracking-widest">Editando Questão #{q.id}</span>
-                  <button onClick={cancelEditing} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
-                </div>
-                
-                <textarea 
-                  value={editForm.enunciado} 
-                  onChange={e => setEditForm({...editForm, enunciado: e.target.value})}
-                  className="w-full p-3 border border-orange-200 rounded bg-white text-sm font-bold text-slate-700"
-                  placeholder="Enunciado da questão..."
-                  rows={4}
-                />
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {editForm.opcoes.map((op: string, i: number) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className={`font-black text-xs ${i === editForm.resposta_correta ? 'text-green-600' : 'text-slate-400'}`}>{String.fromCharCode(65+i)}</span>
-                      <input 
-                        value={op}
-                        onChange={e => {
-                          const novasOps = [...editForm.opcoes];
-                          novasOps[i] = e.target.value;
-                          setEditForm({...editForm, opcoes: novasOps});
-                        }}
-                        className={`w-full p-2 border rounded text-xs ${i === editForm.resposta_correta ? 'border-green-400 bg-green-50' : 'border-slate-300'}`}
-                      />
-                      <input 
-                        type="radio" 
-                        name={`gabarito-${q.id}`} 
-                        checked={i === editForm.resposta_correta} 
-                        onChange={() => setEditForm({...editForm, resposta_correta: i})}
-                        className="accent-green-600 cursor-pointer"
-                        title="Marcar como correta"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <input value={editForm.disciplina} onChange={e => setEditForm({...editForm, disciplina: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Disciplina" />
-                  <input value={editForm.tema} onChange={e => setEditForm({...editForm, tema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Tema" />
-                  <input value={editForm.subtema || ''} onChange={e => setEditForm({...editForm, subtema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Subtema" />
-                </div>
-
-                <textarea 
-                  value={editForm.justificativa || ''} 
-                  onChange={e => setEditForm({...editForm, justificativa: e.target.value})}
-                  className="w-full p-3 border border-slate-300 rounded bg-white text-xs italic text-slate-600"
-                  placeholder="Comentário/Justificativa..."
-                  rows={3}
-                />
-                
-                <div className="grid grid-cols-2 gap-2">
-                    <input value={editForm.imagem_url || ''} onChange={e => setEditForm({...editForm, imagem_url: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem ENUNCIADO" />
-                    <input value={editForm.imagem_justificativa || ''} onChange={e => setEditForm({...editForm, imagem_justificativa: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem EXPLICAÇÃO" />
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button onClick={handleInlineSave} className="flex-1 bg-green-600 text-white py-2 rounded font-black text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2"><Save size={14}/> Salvar Alterações</button>
-                  <button onClick={cancelEditing} className="px-4 py-2 border border-slate-300 rounded text-slate-500 font-bold text-xs uppercase hover:bg-slate-50">Cancelar</button>
-                </div>
+                <div className="flex justify-between items-center mb-4 border-b border-orange-200 pb-2"><span className="font-black text-orange-600 uppercase text-xs tracking-widest">Editando Questão #{q.id}</span><button onClick={cancelEditing} className="text-slate-400 hover:text-slate-600"><X size={16}/></button></div>
+                <textarea value={editForm.enunciado} onChange={e => setEditForm({...editForm, enunciado: e.target.value})} className="w-full p-3 border border-orange-200 rounded bg-white text-sm font-bold text-slate-700" placeholder="Enunciado da questão..." rows={4} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{editForm.opcoes.map((op: string, i: number) => (<div key={i} className="flex items-center gap-2"><span className={`font-black text-xs ${i === editForm.resposta_correta ? 'text-green-600' : 'text-slate-400'}`}>{String.fromCharCode(65+i)}</span><input value={op} onChange={e => { const novasOps = [...editForm.opcoes]; novasOps[i] = e.target.value; setEditForm({...editForm, opcoes: novasOps}); }} className={`w-full p-2 border rounded text-xs ${i === editForm.resposta_correta ? 'border-green-400 bg-green-50' : 'border-slate-300'}`} /><input type="radio" name={`gabarito-${q.id}`} checked={i === editForm.resposta_correta} onChange={() => setEditForm({...editForm, resposta_correta: i})} className="accent-green-600 cursor-pointer" title="Marcar como correta" /></div>))}</div>
+                <div className="grid grid-cols-3 gap-2"><input value={editForm.disciplina} onChange={e => setEditForm({...editForm, disciplina: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Disciplina" /><input value={editForm.tema} onChange={e => setEditForm({...editForm, tema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Tema" /><input value={editForm.subtema || ''} onChange={e => setEditForm({...editForm, subtema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Subtema" /></div>
+                <textarea value={editForm.justificativa || ''} onChange={e => setEditForm({...editForm, justificativa: e.target.value})} className="w-full p-3 border border-slate-300 rounded bg-white text-xs italic text-slate-600" placeholder="Comentário/Justificativa..." rows={3} />
+                <div className="grid grid-cols-2 gap-2"><input value={editForm.imagem_url || ''} onChange={e => setEditForm({...editForm, imagem_url: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem ENUNCIADO" /><input value={editForm.imagem_justificativa || ''} onChange={e => setEditForm({...editForm, imagem_justificativa: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem EXPLICAÇÃO" /></div>
+                <div className="flex gap-2 pt-2"><button onClick={handleInlineSave} className="flex-1 bg-green-600 text-white py-2 rounded font-black text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2"><Save size={14}/> Salvar Alterações</button><button onClick={cancelEditing} className="px-4 py-2 border border-slate-300 rounded text-slate-500 font-bold text-xs uppercase hover:bg-slate-50">Cancelar</button></div>
               </div>
             ) : (
               <>
                 <div className="px-6 py-3 bg-slate-50/50 flex justify-between items-center border-b border-slate-200 font-black text-slate-700 text-[10px] uppercase">
-                  <div className="flex items-center gap-2">
-                    <span>Questão {idx + 1}</span>
-                    <span className="text-slate-300 hidden sm:inline">|</span>
-                    <div className="flex items-center gap-1.5 opacity-60">
-                      {q.origem === 'med53' ? <span className="text-[#00a884] flex items-center gap-1"><Star size={10} fill="currentColor"/> MED53</span> : <span className="text-indigo-600 flex items-center gap-1"><Archive size={10}/> BANCA</span>}
-                      <span className="text-slate-300">•</span>
-                      <span className="truncate max-w-[150px] sm:max-w-none">{q.disciplina} › {q.tema}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {respondida && (<span className={respostas[q.id] === q.resposta_correta ? 'text-[#00a884]' : 'text-rose-600'}>{respostas[q.id] === q.resposta_correta ? '✓ ACERTOU' : '✕ ERROU'}</span>)}
-                    {isAdmin && (
-                      <div className="flex items-center gap-1 ml-2 border-l pl-3 border-slate-200">
-                         <button onClick={() => startEditing(q)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"><Edit size={14}/></button>
-                         <button onClick={() => handleInlineDelete(q.id)} title="Apagar" className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"><Trash2 size={14}/></button>
-                      </div>
-                    )}
-                  </div>
+                  <div className="flex items-center gap-2"><span>Questão {idx + 1}</span><span className="text-slate-300 hidden sm:inline">|</span><div className="flex items-center gap-1.5 opacity-60">{q.origem === 'med53' ? <span className="text-[#00a884] flex items-center gap-1"><Star size={10} fill="currentColor"/> MED53</span> : <span className="text-indigo-600 flex items-center gap-1"><Archive size={10}/> BANCA</span>}<span className="text-slate-300">•</span><span className="truncate max-w-[150px] sm:max-w-none">{q.disciplina} › {q.tema}</span></div></div>
+                  <div className="flex items-center gap-3">{respondida && (<span className={respostas[q.id] === q.resposta_correta ? 'text-[#00a884]' : 'text-rose-600'}>{respostas[q.id] === q.resposta_correta ? '✓ ACERTOU' : '✕ ERROU'}</span>)}{isAdmin && (<div className="flex items-center gap-1 ml-2 border-l pl-3 border-slate-200"><button onClick={() => startEditing(q)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"><Edit size={14}/></button><button onClick={() => handleInlineDelete(q.id)} title="Apagar" className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"><Trash2 size={14}/></button></div>)}</div>
                 </div>
                 <div className="p-8">
                     <p className="text-[15.5px] font-bold text-slate-800 leading-relaxed mb-8">{q.enunciado}</p>
-                    
-                    {/* IMAGEM DO ENUNCIADO (Sempre visível se existir) */}
-                    {q.imagem_url && (
-                        <div className="mb-8 p-1.5 bg-slate-50 border border-slate-200 rounded-lg shadow-inner">
-                            <img src={q.imagem_url} alt="Referência" className="w-full max-h-80 object-contain mx-auto rounded-md" />
-                        </div>
-                    )}
-                    
-                    <div className="space-y-2.5">
-                        {q.opcoes.map((op: string, i: number) => { 
-                            let style = "border-slate-200 bg-[#F9FAFB] text-slate-700 font-bold"; 
-                            if (respondida) { 
-                              if (i === q.resposta_correta) style = "bg-[#ECFDF5] border-[#00a884] text-[#065F46]"; 
-                              else if (respostas[q.id] === i) style = "bg-[#FFF1F2] border-rose-200 text-rose-800"; 
-                              else style = "opacity-40 grayscale border-transparent"; 
-                            } 
-                            return (
-                                <button key={i} disabled={respondida} 
-                                    onClick={async () => { 
-                                        setRespostas((p: any) => ({...p, [q.id]: i})); 
-                                        // Salva histórico E atualiza o Streak
-                                        await supabase.from('historico_questoes').insert([{ user_id: user.id, questao_id: q.id, acertou: i === q.resposta_correta }]); 
-                                        await carregarStats(user.id); 
-                                        await atualizarStreak(user.id); // <--- ATUALIZA O STREAK AQUI
-                                    }} 
-                                    className={`w-full p-4 border rounded-xl text-left flex items-center gap-4 transition-all text-[13.5px] ${style}`}>
-                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${respondida && i === q.resposta_correta ? 'bg-[#00a884] text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{String.fromCharCode(65+i)}</span>{op}
-                                </button>
-                            ); 
-                        })}
-                    </div>
-                    
+                    {q.imagem_url && (<div className="mb-8 p-1.5 bg-slate-50 border border-slate-200 rounded-lg shadow-inner"><img src={q.imagem_url} alt="Referência" className="w-full max-h-80 object-contain mx-auto rounded-md" /></div>)}
+                    <div className="space-y-2.5">{q.opcoes.map((op: string, i: number) => { let style = "border-slate-200 bg-[#F9FAFB] text-slate-700 font-bold"; if (respondida) { if (i === q.resposta_correta) style = "bg-[#ECFDF5] border-[#00a884] text-[#065F46]"; else if (respostas[q.id] === i) style = "bg-[#FFF1F2] border-rose-200 text-rose-800"; else style = "opacity-40 grayscale border-transparent"; } return (<button key={i} disabled={respondida} onClick={async () => { setRespostas((p: any) => ({...p, [q.id]: i})); await supabase.from('historico_questoes').insert([{ user_id: user.id, questao_id: q.id, acertou: i === q.resposta_correta }]); await carregarStats(user.id); await atualizarStreak(user.id); }} className={`w-full p-4 border rounded-xl text-left flex items-center gap-4 transition-all text-[13.5px] ${style}`}><span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${respondida && i === q.resposta_correta ? 'bg-[#00a884] text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{String.fromCharCode(65+i)}</span>{op}</button>); })}</div>
                     {respondida && (
                       <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col items-end">
                         <div className="flex gap-4 items-center">
-                            {/* BOTÃO DE REPORTAR */}
-                            <button 
-                                onClick={() => setReportingId(isReporting ? null : q.id)} 
-                                className="text-slate-400 font-bold text-[10px] uppercase flex items-center gap-1 hover:text-rose-500 transition-colors"
-                            >
-                                <Flag size={12}/> Reportar Erro
-                            </button>
-
+                            <button onClick={() => setReportingId(isReporting ? null : q.id)} className="text-slate-400 font-bold text-[10px] uppercase flex items-center gap-1 hover:text-rose-500 transition-colors"><Flag size={12}/> Reportar Erro</button>
                             <button onClick={() => setExplicas((p: any) => ({...p, [q.id]: !p[q.id]}))} className="text-[#00a884] font-black text-[10px] uppercase flex items-center gap-2 hover:underline transition-all"><Eye size={16}/> {explicas[q.id] ? 'Fechar' : 'Ver Explicação'}</button>
                         </div>
-
-                        {/* ÁREA DE REPORTE */}
-                        {isReporting && (
-                            <div className="mt-4 p-4 bg-rose-50 border border-rose-100 rounded-lg w-full animate-in fade-in slide-in-from-top-2">
-                                <span className="block text-xs font-black text-rose-800 mb-3">Qual o problema desta questão?</span>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {['Gabarito Errado', 'Erro de Português', 'Imagem Ruim', 'Outro'].map(motivo => (
-                                        <button 
-                                            key={motivo}
-                                            onClick={() => handleReportIssue(q.id, motivo)}
-                                            className="bg-white border border-rose-200 text-rose-700 py-2 rounded text-[10px] font-bold uppercase hover:bg-rose-600 hover:text-white transition-colors"
-                                        >
-                                            {motivo}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {explicas[q.id] && (
-                            <div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner animate-in fade-in">
-                                <div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>
-                                {q.justificativa}
-                                {/* IMAGEM DA EXPLICAÇÃO (Nova!) */}
-                                {q.imagem_justificativa && (
-                                    <div className="mt-4 pt-4 border-t border-slate-200">
-                                        <img src={q.imagem_justificativa} alt="Explicação Visual" className="w-full max-h-60 object-contain mx-auto rounded-md opacity-90" />
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        {isReporting && (<div className="mt-4 p-4 bg-rose-50 border border-rose-100 rounded-lg w-full animate-in fade-in slide-in-from-top-2"><span className="block text-xs font-black text-rose-800 mb-3">Qual o problema desta questão?</span><div className="grid grid-cols-2 gap-2">{['Gabarito Errado', 'Erro de Português', 'Imagem Ruim', 'Outro'].map(motivo => (<button key={motivo} onClick={() => handleReportIssue(q.id, motivo)} className="bg-white border border-rose-200 text-rose-700 py-2 rounded text-[10px] font-bold uppercase hover:bg-rose-600 hover:text-white transition-colors">{motivo}</button>))}</div></div>)}
+                        {explicas[q.id] && (<div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner animate-in fade-in"><div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>{q.justificativa}{q.imagem_justificativa && (<div className="mt-4 pt-4 border-t border-slate-200"><img src={q.imagem_justificativa} alt="Explicação Visual" className="w-full max-h-60 object-contain mx-auto rounded-md opacity-90" /></div>)}</div>)}
                       </div>
                     )}
                 </div>
