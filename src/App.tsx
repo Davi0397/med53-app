@@ -5,7 +5,7 @@ import {
   Menu, X, Lock, Star, Target, ArrowLeft, BarChart3, Mail, List, 
   Save, CreditCard, AlertTriangle, Loader2, Archive, Play, 
   ChevronRight, ChevronLeft, Layout, FolderOpen, Folder, Clock,
-  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap
+  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO ---
@@ -16,17 +16,25 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, storage: window.localStorage, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
-// --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO ---
+// --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO (FISHER-YATES) ---
 function embaralharQuestoes(listaQuestoes: any[]) {
   return listaQuestoes.map(q => {
+    // Se não tiver opções (ex: discursiva) ou admin estiver editando, não mexe
     if (!q.opcoes || q.opcoes.length === 0) return q;
+
+    // 1. Cria um array de objetos para rastrear qual é a correta
     const opcoesMapeadas = q.opcoes.map((texto: string, index: number) => ({
-      texto, ehCorreta: index === q.resposta_correta
+      texto,
+      ehCorreta: index === q.resposta_correta
     }));
+
+    // 2. Algoritmo de embaralhamento
     for (let i = opcoesMapeadas.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [opcoesMapeadas[i], opcoesMapeadas[j]] = [opcoesMapeadas[j], opcoesMapeadas[i]];
     }
+
+    // 3. Reconstrói a questão com a nova ordem e o novo índice da resposta certa
     return {
       ...q,
       opcoes: opcoesMapeadas.map((o: any) => o.texto),
@@ -44,10 +52,10 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'home' | 'feed'>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Streak
+  // Streak (Foguinho)
   const [streak, setStreak] = useState(0);
 
-  // Reporte
+  // Reporte de Erro (Estado do Modal)
   const [reportingId, setReportingId] = useState<number | null>(null);
 
   // Auth
@@ -58,32 +66,37 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState(''); 
 
-  // Filtros
+  // --- FILTROS ---
   const [allData, setAllData] = useState<any[]>([]); 
   const [filtroMapa, setFiltroMapa] = useState<any>({}); 
   const [activeDisc, setActiveDisc] = useState<string | null>(null); 
   const [activeTema, setActiveTema] = useState<string | null>(null); 
+
+  // Seleções
   const [selectedDiscs, setSelectedDiscs] = useState<string[]>([]);
   const [selectedTemas, setSelectedTemas] = useState<string[]>([]);
   const [selectedSubtemas, setSelectedSubtemas] = useState<string[]>([]);
   const [filterOrigem, setFilterOrigem] = useState<'todos' | 'originais' | 'antigas'>('todos');
 
-  // Dados
+  // Dados do App & Paginação
   const [questoes, setQuestoes] = useState<any[]>([]);
   const [respostas, setRespostas] = useState<Record<number, number>>({});
   const [explicas, setExplicas] = useState<Record<number, boolean>>({});
   const [stats, setStats] = useState({ totalSemana: 0, taxa: 0 });
+  
+  // PAGINAÇÃO
   const [page, setPage] = useState(0);
-  const [itemsPerPage, setItemsPerPage] = useState(25); 
+  const [itemsPerPage, setItemsPerPage] = useState(25); // Padrão 25
   const [hasMore, setHasMore] = useState(false);
 
-  // Admin
-  const [abaAdmin, setAbaAdmin] = useState<'questoes' | 'usuarios' | 'reportes' | null>(null);
+  // Admin Geral e Reportes
+  const [abaAdmin, setAbaAdmin] = useState<'questoes' | 'usuarios' | 'reportes' | 'padronizacao' | null>(null);
   const [listaUsuarios, setListaUsuarios] = useState<any[]>([]);
-  const [listaReportes, setListaReportes] = useState<any[]>([]);
+  const [listaReportes, setListaReportes] = useState<any[]>([]); 
+  const [listaTemasAdmin, setListaTemasAdmin] = useState<any[]>([]); // NOVA LISTA
   const [datasTemp, setDatasTemp] = useState<Record<string, string>>({});
 
-  // Form Admin
+  // Form Admin (Cadastro Novo)
   const [fEnun, setFEnun] = useState('');
   const [fOps, setFOps] = useState(['', '', '', '']);
   const [fCorr, setFCorr] = useState(0);
@@ -95,92 +108,183 @@ export default function App() {
   const [fImgJust, setFImgJust] = useState(''); 
   const [fOrigemCadastro, setFOrigemCadastro] = useState('med53'); 
 
-  // Edit
+  // --- ADMIN IN-LINE (Edição Rápida) ---
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<any>({});
 
-  const startEditing = (q: any) => { setEditingId(q.id); setEditForm({ ...q }); };
-  const cancelEditing = () => { setEditingId(null); setEditForm({}); };
+  const startEditing = (q: any) => {
+    setEditingId(q.id);
+    setEditForm({ ...q }); 
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditForm({});
+  };
 
   const handleInlineDelete = async (id: number) => {
-    if (!confirm("Tem certeza?")) return;
+    if (!confirm("Tem certeza absoluta que deseja APAGAR esta questão?")) return;
+    
     const { error } = await supabase.from('questoes').delete().eq('id', id);
-    if (error) alert("Erro: " + error.message);
-    else setQuestoes(prev => prev.filter(q => q.id !== id));
+    if (error) {
+      alert("Erro ao apagar: " + error.message);
+    } else {
+      setQuestoes(prev => prev.filter(q => q.id !== id));
+      alert("Questão apagada!");
+    }
   };
 
   const handleInlineSave = async () => {
-    if (!editForm.enunciado || !editForm.disciplina) return alert("Preencha campos.");
+    if (!editForm.enunciado || !editForm.disciplina) return alert("Preencha os campos obrigatórios.");
+    
     setLoading(true);
     const { error } = await supabase.from('questoes').update({
-      enunciado: editForm.enunciado, opcoes: editForm.opcoes, resposta_correta: editForm.resposta_correta,
-      justificativa: editForm.justificativa, disciplina: editForm.disciplina, tema: editForm.tema,
-      subtema: editForm.subtema, imagem_url: editForm.imagem_url, imagem_justificativa: editForm.imagem_justificativa 
+      enunciado: editForm.enunciado,
+      opcoes: editForm.opcoes,
+      resposta_correta: editForm.resposta_correta,
+      justificativa: editForm.justificativa,
+      disciplina: editForm.disciplina,
+      tema: editForm.tema,
+      subtema: editForm.subtema,
+      imagem_url: editForm.imagem_url,
+      imagem_justificativa: editForm.imagem_justificativa 
     }).eq('id', editingId);
-    if (error) alert("Erro: " + error.message);
-    else {
+
+    if (error) {
+      alert("Erro ao salvar: " + error.message);
+    } else {
       setQuestoes(prev => prev.map(q => q.id === editingId ? editForm : q));
-      setEditingId(null); setEditForm({});
+      setEditingId(null);
+      setEditForm({});
+      alert("Questão atualizada com sucesso!");
     }
     setLoading(false);
   };
 
+  // --- FUNÇÃO DE REPORTAR ERRO ---
   const handleReportIssue = async (qId: number, motivo: string) => {
     if(!user) return;
-    await supabase.from('reportes').insert([{ user_id: user.id, questao_id: qId, motivo: motivo }]);
-    alert("Obrigado! Reporte enviado."); setReportingId(null);
+    try {
+        await supabase.from('reportes').insert([{
+            user_id: user.id,
+            questao_id: qId,
+            motivo: motivo
+        }]);
+        alert("Obrigado! Vamos analisar o erro.");
+        setReportingId(null); 
+    } catch (e) {
+        alert("Erro ao enviar reporte. Verifique se o SQL da tabela 'reportes' foi criado.");
+    }
   };
 
+  // --- FUNÇÕES DE ADMIN: GERENCIAR REPORTES ---
   async function carregarReportes() {
-      const { data } = await supabase.from('reportes').select('*, questoes(disciplina, tema)').order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('reportes')
+        .select('*, questoes(disciplina, tema)')
+        .order('created_at', { ascending: false });
+      
+      if (error) console.error("Erro reportes:", error);
       setListaReportes(data || []);
   }
 
   async function resolverReporte(qId: number, reporteId: number) {
       setLoading(true);
-      const { data } = await supabase.from('questoes').select('*').eq('id', qId).single();
-      if (data) { setQuestoes([data]); setViewMode('feed'); setAbaAdmin(null); startEditing(data); }
+      const { data: questao } = await supabase.from('questoes').select('*').eq('id', qId).single();
+      
+      if (questao) {
+          setQuestoes([questao]);
+          setViewMode('feed');
+          setAbaAdmin(null);
+          startEditing(questao);
+      } else {
+          alert("Questão não encontrada (pode ter sido apagada).");
+      }
       setLoading(false);
   }
 
   async function apagarReporte(id: number) {
-      if(!confirm("Apagar reporte?")) return;
+      if(!confirm("Apagar este reporte da lista?")) return;
       await supabase.from('reportes').delete().eq('id', id);
-      carregarReportes();
+      carregarReportes(); 
   }
 
-  // --- HEARTBEAT ANTI-PREJUÍZO (O NOVO GUARDIÃO) 💓 ---
+  // --- FUNÇÕES DE ADMIN: PADRONIZAÇÃO (NOVO) ---
+  async function carregarPadronizacao() {
+      const { data } = await supabase.from('questoes').select('disciplina, tema');
+      if(!data) return;
+
+      // Agrupa no JS para contar
+      const mapa: Record<string, { disciplina: string, tema: string, count: number }> = {};
+      
+      data.forEach(item => {
+          if(!item.tema) return;
+          const key = `${item.disciplina}-${item.tema}`;
+          if(!mapa[key]) {
+              mapa[key] = { disciplina: item.disciplina, tema: item.tema, count: 0 };
+          }
+          mapa[key].count++;
+      });
+
+      const listaOrdenada = Object.values(mapa).sort((a,b) => a.disciplina.localeCompare(b.disciplina) || a.tema.localeCompare(b.tema));
+      setListaTemasAdmin(listaOrdenada);
+  }
+
+  async function renomearTema(disc: string, temaAntigo: string) {
+      const novoNome = prompt(`Renomear o tema "${temaAntigo}" (${disc}) para:`, temaAntigo);
+      if(!novoNome || novoNome === temaAntigo) return;
+
+      if(!confirm(`Isso vai mover TODAS as questões de "${temaAntigo}" para "${novoNome}".\nSe "${novoNome}" já existir, elas serão fundidas.\nConfirmar?`)) return;
+
+      setLoading(true);
+      const { error } = await supabase.from('questoes')
+          .update({ tema: novoNome })
+          .eq('disciplina', disc)
+          .eq('tema', temaAntigo);
+
+      if(error) alert("Erro ao atualizar: " + error.message);
+      else {
+          alert("Sucesso! Temas unificados.");
+          await carregarPadronizacao();
+          await buscarDadosEstruturais();
+      }
+      setLoading(false);
+  }
+
+  // --- HEARTBEAT ANTI-PREJUÍZO 💓 ---
   useEffect(() => {
-    if (!user) return; // Só roda se tiver usuário logado
+    if (!user) return; 
 
     const checkSessaoAtiva = async () => {
-        // 1. Pega o token atual do navegador
         const session = await supabase.auth.getSession();
         const tokenAtual = session.data.session?.access_token;
         
         if (!tokenAtual) return;
 
-        // 2. Pergunta ao banco: Qual é o último token válido?
         const { data } = await supabase.from('perfis').select('last_session_id').eq('id', user.id).single();
 
-        // 3. Se o token do banco for diferente do meu, ALGUÉM ENTROU NO MEU LUGAR
         if (data?.last_session_id && data.last_session_id !== tokenAtual) {
             console.warn("Sessão derrubada por novo login.");
-            setSessaoInvalida(true); // Ativa a tela vermelha
-            supabase.auth.signOut(); // Desloga do Supabase
+            setSessaoInvalida(true); 
+            supabase.auth.signOut(); 
         }
     };
 
-    // Roda a verificação a cada 5 segundos
     const intervalo = setInterval(checkSessaoAtiva, 5000);
     return () => clearInterval(intervalo);
   }, [user]);
-  // ----------------------------------------------------
 
-  // --- INICIALIZAÇÃO BLINDADA ---
+  // --- INICIALIZAÇÃO BLINDADA COM TIMEOUT ---
   useEffect(() => {
     let mounted = true;
-    const safetyTimer = setTimeout(() => { if (mounted && loading) setLoading(false); }, 8000); // 8s de timeout
+
+    // Timeout de segurança: 8s
+    const safetyTimer = setTimeout(() => {
+        if (mounted && loading) {
+            console.log("Timeout de segurança ativado.");
+            setLoading(false);
+        }
+    }, 8000);
 
     const init = async () => {
         try {
@@ -191,7 +295,10 @@ export default function App() {
             } else if (mounted) {
                 resetEstadoTotal();
             }
-        } catch { if (mounted) resetEstadoTotal(); }
+        } catch (error) {
+            console.error("Erro no init:", error);
+            if (mounted) resetEstadoTotal();
+        }
     };
     init();
 
@@ -217,8 +324,14 @@ export default function App() {
           const dadosTema = filtroMapa[d].temas[t];
           const listaSubtemas = Object.keys(dadosTema.subtemas);
           if (listaSubtemas.length > 0) {
-            listaSubtemas.forEach(sub => { if (selectedSubtemas.includes(sub)) total += dadosTema.subtemas[sub]; });
-          } else { total += dadosTema.total; }
+            listaSubtemas.forEach(sub => {
+              if (selectedSubtemas.includes(sub)) {
+                total += dadosTema.subtemas[sub];
+              }
+            });
+          } else {
+            total += dadosTema.total;
+          }
         }
       });
     });
@@ -232,17 +345,22 @@ export default function App() {
   };
 
   async function registrarSessaoUnica(uid: string, token: string) {
-    // Essa função força a entrada e sobrescreve qualquer token anterior no banco
-    await supabase.from('perfis').update({ last_session_id: token }).eq('id', uid);
+    try {
+        await supabase.from('perfis').update({ last_session_id: token }).eq('id', uid);
+    } catch (e) { console.error("Erro ao registrar sessão:", e); }
   }
 
   async function inicializar(u: any, token: string) {
     try {
       const { data: perfil } = await supabase.from('perfis').select('*').eq('id', u.id).maybeSingle();
       
-      // Validação extra na entrada
+      // Se não tiver perfil, loga no console mas continua (pode ser o bug do trigger)
+      if (!perfil) console.warn("Perfil não encontrado no init.");
+
       if (perfil?.last_session_id && perfil.last_session_id !== token) {
-        setSessaoInvalida(true); await supabase.auth.signOut(); return;
+        setSessaoInvalida(true); 
+        await supabase.auth.signOut(); 
+        return;
       }
 
       const { data: ass } = await supabase.from('assinaturas').select('*').eq('user_id', u.id).maybeSingle();
@@ -256,21 +374,28 @@ export default function App() {
       
       await buscarDadosEstruturais();
       await carregarStats(u.id);
-      if (perfil?.is_admin) { carregarListaUsuarios(); }
-    } catch { handleLogout(true); } finally { setLoading(false); }
+      if (perfil?.is_admin) {
+        carregarListaUsuarios();
+      }
+    } catch (e) { 
+        console.error(e);
+        handleLogout(true); 
+    } finally { setLoading(false); }
   }
 
   async function atualizarStreak(uid: string) {
     const hoje = new Date().toISOString().split('T')[0];
     const { data: perfil } = await supabase.from('perfis').select('streak_atual, ultima_atividade').eq('id', uid).single();
-    if (perfil && perfil.ultima_atividade !== hoje) {
-        const ontem = new Date();
-        ontem.setDate(ontem.getDate() - 1);
-        const dataOntem = ontem.toISOString().split('T')[0];
-        let novoStreak = 1;
-        if (perfil.ultima_atividade === dataOntem) novoStreak = (perfil.streak_atual || 0) + 1;
-        await supabase.from('perfis').update({ streak_atual: novoStreak, ultima_atividade: hoje }).eq('id', uid);
-        setStreak(novoStreak);
+    if (perfil) {
+        if (perfil.ultima_atividade !== hoje) {
+            const ontem = new Date();
+            ontem.setDate(ontem.getDate() - 1);
+            const dataOntem = ontem.toISOString().split('T')[0];
+            let novoStreak = 1;
+            if (perfil.ultima_atividade === dataOntem) novoStreak = (perfil.streak_atual || 0) + 1;
+            await supabase.from('perfis').update({ streak_atual: novoStreak, ultima_atividade: hoje }).eq('id', uid);
+            setStreak(novoStreak);
+        }
     }
   }
 
@@ -334,7 +459,7 @@ export default function App() {
     });
   }, [filtroMapa]); 
 
-  // --- BUSCA OTIMIZADA ---
+  // --- BUSCA COM PAGINAÇÃO E EMBARALHAMENTO ---
   async function buscarQuestoes(novaPagina = 0) {
     if (!user) return;
     setLoading(true);
@@ -365,13 +490,15 @@ export default function App() {
           }
           return true;
       });
-      setQuestoes(isAdmin ? filtradas : embaralharQuestoes(filtradas));
+
+      const finais = isAdmin ? filtradas : embaralharQuestoes(filtradas);
+      setQuestoes(finais);
       setHasMore(count ? (inicio + itemsPerPage) < count : false);
     }
     setLoading(false);
   }
 
-  // --- HANDLERS FILTROS ---
+  // --- FUNÇÕES DE SELEÇÃO DE FILTROS ---
   const handleSelectDisc = (disc: string, checked: boolean) => {
     const newDiscs = checked ? [...selectedDiscs, disc] : selectedDiscs.filter(d => d !== disc);
     setSelectedDiscs(newDiscs);
@@ -392,7 +519,8 @@ export default function App() {
                 novosSubtemas = novosSubtemas.filter(item => !subs.includes(item));
             }
         });
-        setSelectedTemas(novosTemas); setSelectedSubtemas(novosSubtemas);
+        setSelectedTemas(novosTemas);
+        setSelectedSubtemas(novosSubtemas);
     }
   };
 
@@ -418,10 +546,11 @@ export default function App() {
           if (!selectedDiscs.includes(disc)) setSelectedDiscs([...selectedDiscs, disc]);
           if (!selectedTemas.includes(tema)) setSelectedTemas([...selectedTemas, tema]);
           setSelectedSubtemas([...selectedSubtemas, sub]);
-      } else { setSelectedSubtemas(selectedSubtemas.filter(s => s !== sub)); }
+      } else {
+          setSelectedSubtemas(selectedSubtemas.filter(s => s !== sub));
+      }
   };
 
-  // --- AUTH ---
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true);
     try {
@@ -437,10 +566,6 @@ export default function App() {
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        
-        // --- LOGIN FORÇADO: AQUI ACONTECE A MÁGICA ---
-        // Ao logar com sucesso, eu IMEDIATAMENTE digo ao banco: "Eu sou o dono agora".
-        // Isso vai fazer o Heartbeat do outro computador falhar nos próximos 5 segundos.
         if (data.user) {
             await registrarSessaoUnica(data.user.id, data.session!.access_token);
         }
@@ -458,20 +583,19 @@ export default function App() {
     finally { window.location.href = "/"; }
   };
 
-  // --- TELA DE SESSÃO DERRUBADA (O CIDADÃO VAI VER ISSO) ---
-  if (sessaoInvalida) return <div className="min-h-screen bg-rose-50 flex items-center justify-center p-6"><div className="bg-white p-8 rounded-2xl shadow-xl text-center animate-in zoom-in-95"><AlertTriangle className="mx-auto text-rose-600 mb-4" size={32} /><h2 className="font-black text-slate-900 mb-2">Conexão Interrompida</h2><p className="text-slate-600 text-sm mb-6">Sua conta foi acessada em outro dispositivo.<br/>O acesso simultâneo não é permitido.</p><button onClick={() => window.location.reload()} className="bg-rose-600 text-white py-3 px-6 rounded-xl font-bold uppercase text-xs hover:bg-rose-700 transition-colors">Reconectar Aqui</button></div></div>;
+  if (sessaoInvalida) return <div className="min-h-screen bg-rose-50 flex items-center justify-center p-6"><div className="bg-white p-8 rounded-2xl shadow-xl text-center animate-in zoom-in-95"><AlertTriangle className="mx-auto text-rose-600 mb-4" size={32} /><h2 className="font-black text-slate-900 mb-2">Conexão Interrompida</h2><p className="text-slate-600 text-sm mb-6">Acesso detectado em outro dispositivo.</p><button onClick={() => window.location.reload()} className="bg-rose-600 text-white py-3 px-6 rounded-xl font-bold uppercase text-xs hover:bg-rose-700 transition-colors">Reconectar</button></div></div>;
 
   if (loading && !user) return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FBFBFB] gap-4">
-          <Loader2 className="animate-spin text-[#00a884]" size={24} />
-          <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">Carregando MED53...</span>
-          <div className="flex flex-col items-center gap-2 mt-4 animate-in fade-in slide-in-from-bottom-2 duration-1000">
-             <Server size={16} className="text-slate-300 animate-pulse"/>
-             <p className="text-[10px] text-slate-400 text-center max-w-[250px]">
-               Demorando? O servidor pode estar "acordando" (Cold Start) ou verificando sua sessão única.<br/>Isso leva cerca de 10-20 segundos na primeira vez.
-             </p>
-          </div>
-      </div>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#FBFBFB] gap-4">
+        <Loader2 className="animate-spin text-[#00a884]" size={24} />
+        <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">Carregando MED53...</span>
+        <div className="flex flex-col items-center gap-2 mt-4 animate-in fade-in slide-in-from-bottom-2 duration-1000">
+           <Server size={16} className="text-slate-300 animate-pulse"/>
+           <p className="text-[10px] text-slate-400 text-center max-w-[250px]">
+             Demorando? O servidor pode estar "acordando".<br/>Isso leva cerca de 10-20 segundos.
+           </p>
+        </div>
+    </div>
   );
 
   if (!user) return (
@@ -480,13 +604,9 @@ export default function App() {
         <h1 className="text-3xl font-black text-slate-900 mb-2 text-center tracking-tighter italic">MED<span className="text-[#00a884] not-italic">53</span></h1>
         <p className="text-center text-slate-500 text-[10px] uppercase font-black mb-6 tracking-widest">{isForgot ? 'Recuperar Acesso' : (isSignUp ? 'Criar Nova Conta' : 'Acesso Acadêmico')}</p>
         
-        {/* AVISO DE CONTA ÚNICA NA TELA DE LOGIN */}
         <div className="mb-6 p-3 bg-amber-50 border border-amber-100 rounded-xl flex gap-3 items-start">
             <ShieldAlert size={16} className="text-amber-500 shrink-0 mt-0.5"/>
-            <div>
-                <p className="text-[10px] text-amber-800 font-bold leading-tight mb-1">Acesso Pessoal & Intransferível</p>
-                <p className="text-[9px] text-amber-700 leading-tight opacity-80">Login simultâneo bloqueia a conexão anterior automaticamente.</p>
-            </div>
+            <p className="text-[10px] text-amber-800 font-bold leading-tight">Conta pessoal. Acessos simultâneos bloqueiam a conexão anterior.</p>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
@@ -520,8 +640,6 @@ export default function App() {
           <h1 onClick={() => setAbaAdmin(null)} className="text-lg font-black text-slate-900 tracking-tighter cursor-pointer">MED<span className="text-[#00a884]">53</span></h1>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
-          
-          {/* FOGUINHO (STREAK) */}
           <div className="flex items-center gap-1 bg-orange-50 text-orange-600 px-3 py-1 rounded-full border border-orange-100" title="Dias seguidos de estudo">
               <Flame size={14} fill="currentColor" className={streak > 0 ? "animate-pulse" : "opacity-50"} />
               <span className="font-black text-[10px]">{streak}</span>
@@ -531,6 +649,7 @@ export default function App() {
               <button onClick={() => setAbaAdmin(abaAdmin === 'questoes' ? null : 'questoes')} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all ${abaAdmin === 'questoes' ? 'bg-[#00a884] text-white' : 'text-slate-600'}`}>Questões</button>
               <button onClick={() => setAbaAdmin(abaAdmin === 'usuarios' ? null : 'usuarios')} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all ${abaAdmin === 'usuarios' ? 'bg-[#00a884] text-white' : 'text-slate-600'}`}>Alunos</button>
               <button onClick={() => { setAbaAdmin(abaAdmin === 'reportes' ? null : 'reportes'); carregarReportes(); }} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all flex items-center gap-1 ${abaAdmin === 'reportes' ? 'bg-rose-600 text-white border-rose-600' : 'text-slate-600 border-slate-200'}`}> <AlertOctagon size={10}/> Reportes</button>
+              <button onClick={() => { setAbaAdmin(abaAdmin === 'padronizacao' ? null : 'padronizacao'); carregarPadronizacao(); }} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all flex items-center gap-1 ${abaAdmin === 'padronizacao' ? 'bg-blue-600 text-white border-blue-600' : 'text-slate-600 border-slate-200'}`}> <Tags size={10}/> Padronização</button>
           </div>)}
           <button onClick={() => handleLogout(false)} className="text-slate-600 hover:text-rose-600 transition-colors flex items-center gap-1 font-black uppercase text-[10px]">Sair <LogOut size={16}/></button>
         </div>
@@ -763,8 +882,7 @@ export default function App() {
                       const hoje = new Date();
                       const exp = u.assinatura?.data_expiracao ? new Date(u.assinatura.data_expiracao) : null;
                       const dataFormatada = exp ? exp.toLocaleDateString('pt-BR') : '-';
-                      let textoPrazo = null;
-                      let corPrazo = '';
+                      let textoPrazo = null; let corPrazo = '';
                       if (exp) {
                           const diff = exp.getTime() - hoje.getTime();
                           const dias = Math.ceil(diff / (86400000));
@@ -776,10 +894,7 @@ export default function App() {
                         <tr key={u.id} className="hover:bg-slate-50/30">
                           <td className="p-4 font-bold text-slate-800 text-[12px]">{u.email}</td>
                           <td className="p-4"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${u.assinatura?.status === 'ativo' ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'}`}>{u.assinatura?.status || 'pendente'}</span></td>
-                          <td className="p-4">
-                              <div className="text-[11px] font-mono text-slate-600 mb-0.5 flex items-center gap-1.5"><Clock size={12} className="opacity-50"/> {dataFormatada}</div>
-                              {textoPrazo && <div className={`text-[9px] font-black uppercase tracking-wide ${corPrazo}`}>{textoPrazo}</div>}
-                          </td>
+                          <td className="p-4"><div className="text-[11px] font-mono text-slate-600 mb-0.5 flex items-center gap-1.5"><Clock size={12} className="opacity-50"/> {dataFormatada}</div>{textoPrazo && <div className={`text-[9px] font-black uppercase tracking-wide ${corPrazo}`}>{textoPrazo}</div>}</td>
                           <td className="p-4"><input type="date" className="border border-slate-300 rounded p-1.5 text-[11px]" onChange={(e) => setDatasTemp({...datasTemp, [u.id]: e.target.value})}/></td>
                           <td className="p-4"><button onClick={() => definirValidadeManual(u.id)} className="flex items-center gap-1 bg-[#00a884] text-white px-3 py-1.5 rounded hover:bg-[#008f6f] text-[10px] font-black uppercase transition-all"><Save size={12} /> Salvar</button></td>
                         </tr>
@@ -816,18 +931,31 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* PAINEL: PADRONIZAÇÃO DE TEMAS (NOVO) */}
+          {abaAdmin === 'padronizacao' && isAdmin && (
+            <div className="max-w-4xl mx-auto p-12 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm animate-in fade-in">
+              <div className="p-4 bg-blue-50 border-b border-blue-100 font-black text-[10px] uppercase text-blue-700 tracking-widest flex items-center gap-2"><Tags size={14}/> Limpeza de Tópicos</div>
+              <div className="overflow-y-auto max-h-[600px] divide-y divide-slate-100">
+                  {listaTemasAdmin.length === 0 ? <div className="p-8 text-center text-slate-400 text-xs italic">Carregando temas...</div> : listaTemasAdmin.map((item, idx) => (
+                      <div key={idx} className="p-4 flex items-center justify-between hover:bg-slate-50">
+                          <div>
+                              <span className="block text-[9px] text-slate-400 font-bold uppercase">{item.disciplina}</span>
+                              <span className="text-xs font-bold text-slate-700">{item.tema}</span>
+                              <span className="ml-2 bg-slate-100 px-1.5 py-0.5 rounded text-[9px] text-slate-500">{item.count} questões</span>
+                          </div>
+                          <button onClick={() => renomearTema(item.disciplina, item.tema)} className="px-3 py-1.5 border border-blue-200 text-blue-600 rounded text-[10px] font-black uppercase hover:bg-blue-50 flex items-center gap-1"><Edit size={10}/> Editar / Fundir</button>
+                      </div>
+                  ))}
+              </div>
+            </div>
+          )}
           
           {/* PAINEL: NOVA QUESTÃO */}
           {abaAdmin === 'questoes' && isAdmin && (
             <form onSubmit={async (e: any) => { 
                 e.preventDefault(); 
-                // SALVA COM AS DUAS IMAGENS
-                await supabase.from('questoes').insert([{ 
-                    enunciado: fEnun, opcoes: fOps, resposta_correta: fCorr, 
-                    disciplina: fDisc, tema: fTema, subtema: fSubtema || null, 
-                    justificativa: fJust, imagem_url: fImg || null, imagem_justificativa: fImgJust || null,
-                    ciclo: 'Clínico', origem: fOrigemCadastro 
-                }]); 
+                await supabase.from('questoes').insert([{ enunciado: fEnun, opcoes: fOps, resposta_correta: fCorr, disciplina: fDisc, tema: fTema, subtema: fSubtema || null, justificativa: fJust, imagem_url: fImg || null, imagem_justificativa: fImgJust || null, ciclo: 'Clínico', origem: fOrigemCadastro }]); 
                 setFEnun(''); await buscarDadosEstruturais(); alert("Salvo!"); 
             }} className="max-w-3xl mx-auto p-12 bg-white border border-slate-200 rounded-xl space-y-4 shadow-sm animate-in fade-in">
                 <h3 className="text-[10px] font-black text-[#00a884] uppercase tracking-widest border-b pb-2">Nova Questão</h3>
@@ -836,13 +964,7 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-3"><input placeholder="Tema" className="p-3 border border-slate-300 rounded-md text-xs font-bold" onChange={e => setFTema(e.target.value)} required /><input placeholder="Subtema (Opcional)" className="p-3 border border-slate-300 rounded-md text-xs font-bold" onChange={e => setFSubtema(e.target.value)} /></div>
                 <div className="grid grid-cols-2 gap-2">{fOps.map((op, i) => <input key={i} placeholder={`Opção ${String.fromCharCode(65+i)}`} className="p-2 border border-slate-300 rounded-md text-xs" onChange={e => {const n=[...fOps]; n[i]=e.target.value; setFOps(n);}} required />)}</div>
                 <div className="grid grid-cols-2 gap-3"><select className="p-3 border border-slate-300 rounded-md text-xs font-bold" onChange={e => setFCorr(Number(e.target.value))}><option value={0}>Gabarito A</option><option value={1}>Gabarito B</option><option value={2}>Gabarito C</option><option value={3}>Gabarito D</option></select></div>
-                
-                {/* CAMPOS DE IMAGEM SEPARADOS */}
-                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded border border-slate-200">
-                    <input placeholder="URL da Imagem do ENUNCIADO" className="p-2 border border-slate-300 rounded-md text-xs" onChange={e => setFImg(e.target.value)} />
-                    <input placeholder="URL da Imagem da EXPLICAÇÃO" className="p-2 border border-slate-300 rounded-md text-xs" onChange={e => setFImgJust(e.target.value)} />
-                </div>
-                
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded border border-slate-200"><input placeholder="URL da Imagem do ENUNCIADO" className="p-2 border border-slate-300 rounded-md text-xs" onChange={e => setFImg(e.target.value)} /><input placeholder="URL da Imagem da EXPLICAÇÃO" className="p-2 border border-slate-300 rounded-md text-xs" onChange={e => setFImgJust(e.target.value)} /></div>
                 <textarea placeholder="Justificativa" className="w-full p-3 border border-slate-300 rounded-md text-xs italic" onChange={e => setFJust(e.target.value)} /><button className="w-full bg-[#00a884] text-white py-3 rounded-md font-black uppercase text-[10px]">Salvar</button>
             </form>
           )}
@@ -861,171 +983,34 @@ function questionsList(questoes: any[], respostas: any, editingId: any, editForm
 
         return (
           <div key={q.id} className={`bg-white border-l-4 ${isEditing ? 'border-orange-500 ring-2 ring-orange-200' : 'border-[#00a884]'} border-t border-b border-r border-slate-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow mb-8`}>
-            
             {isEditing ? (
               <div className="p-6 bg-orange-50 space-y-4 animate-in fade-in">
-                <div className="flex justify-between items-center mb-4 border-b border-orange-200 pb-2">
-                  <span className="font-black text-orange-600 uppercase text-xs tracking-widest">Editando Questão #{q.id}</span>
-                  <button onClick={cancelEditing} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
-                </div>
-                
-                <textarea 
-                  value={editForm.enunciado} 
-                  onChange={e => setEditForm({...editForm, enunciado: e.target.value})}
-                  className="w-full p-3 border border-orange-200 rounded bg-white text-sm font-bold text-slate-700"
-                  placeholder="Enunciado da questão..."
-                  rows={4}
-                />
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {editForm.opcoes.map((op: string, i: number) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className={`font-black text-xs ${i === editForm.resposta_correta ? 'text-green-600' : 'text-slate-400'}`}>{String.fromCharCode(65+i)}</span>
-                      <input 
-                        value={op}
-                        onChange={e => {
-                          const novasOps = [...editForm.opcoes];
-                          novasOps[i] = e.target.value;
-                          setEditForm({...editForm, opcoes: novasOps});
-                        }}
-                        className={`w-full p-2 border rounded text-xs ${i === editForm.resposta_correta ? 'border-green-400 bg-green-50' : 'border-slate-300'}`}
-                      />
-                      <input 
-                        type="radio" 
-                        name={`gabarito-${q.id}`} 
-                        checked={i === editForm.resposta_correta} 
-                        onChange={() => setEditForm({...editForm, resposta_correta: i})}
-                        className="accent-green-600 cursor-pointer"
-                        title="Marcar como correta"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <input value={editForm.disciplina} onChange={e => setEditForm({...editForm, disciplina: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Disciplina" />
-                  <input value={editForm.tema} onChange={e => setEditForm({...editForm, tema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Tema" />
-                  <input value={editForm.subtema || ''} onChange={e => setEditForm({...editForm, subtema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Subtema" />
-                </div>
-
-                <textarea 
-                  value={editForm.justificativa || ''} 
-                  onChange={e => setEditForm({...editForm, justificativa: e.target.value})}
-                  className="w-full p-3 border border-slate-300 rounded bg-white text-xs italic text-slate-600"
-                  placeholder="Comentário/Justificativa..."
-                  rows={3}
-                />
-                
-                <div className="grid grid-cols-2 gap-2">
-                    <input value={editForm.imagem_url || ''} onChange={e => setEditForm({...editForm, imagem_url: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem ENUNCIADO" />
-                    <input value={editForm.imagem_justificativa || ''} onChange={e => setEditForm({...editForm, imagem_justificativa: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem EXPLICAÇÃO" />
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button onClick={handleInlineSave} className="flex-1 bg-green-600 text-white py-2 rounded font-black text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2"><Save size={14}/> Salvar Alterações</button>
-                  <button onClick={cancelEditing} className="px-4 py-2 border border-slate-300 rounded text-slate-500 font-bold text-xs uppercase hover:bg-slate-50">Cancelar</button>
-                </div>
+                <div className="flex justify-between items-center mb-4 border-b border-orange-200 pb-2"><span className="font-black text-orange-600 uppercase text-xs tracking-widest">Editando Questão #{q.id}</span><button onClick={cancelEditing} className="text-slate-400 hover:text-slate-600"><X size={16}/></button></div>
+                <textarea value={editForm.enunciado} onChange={e => setEditForm({...editForm, enunciado: e.target.value})} className="w-full p-3 border border-orange-200 rounded bg-white text-sm font-bold text-slate-700" placeholder="Enunciado da questão..." rows={4} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{editForm.opcoes.map((op: string, i: number) => (<div key={i} className="flex items-center gap-2"><span className={`font-black text-xs ${i === editForm.resposta_correta ? 'text-green-600' : 'text-slate-400'}`}>{String.fromCharCode(65+i)}</span><input value={op} onChange={e => { const novasOps = [...editForm.opcoes]; novasOps[i] = e.target.value; setEditForm({...editForm, opcoes: novasOps}); }} className={`w-full p-2 border rounded text-xs ${i === editForm.resposta_correta ? 'border-green-400 bg-green-50' : 'border-slate-300'}`} /><input type="radio" name={`gabarito-${q.id}`} checked={i === editForm.resposta_correta} onChange={() => setEditForm({...editForm, resposta_correta: i})} className="accent-green-600 cursor-pointer" title="Marcar como correta" /></div>))}</div>
+                <div className="grid grid-cols-3 gap-2"><input value={editForm.disciplina} onChange={e => setEditForm({...editForm, disciplina: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Disciplina" /><input value={editForm.tema} onChange={e => setEditForm({...editForm, tema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Tema" /><input value={editForm.subtema || ''} onChange={e => setEditForm({...editForm, subtema: e.target.value})} className="p-2 border border-slate-300 rounded text-xs" placeholder="Subtema" /></div>
+                <textarea value={editForm.justificativa || ''} onChange={e => setEditForm({...editForm, justificativa: e.target.value})} className="w-full p-3 border border-slate-300 rounded bg-white text-xs italic text-slate-600" placeholder="Comentário/Justificativa..." rows={3} />
+                <div className="grid grid-cols-2 gap-2"><input value={editForm.imagem_url || ''} onChange={e => setEditForm({...editForm, imagem_url: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem ENUNCIADO" /><input value={editForm.imagem_justificativa || ''} onChange={e => setEditForm({...editForm, imagem_justificativa: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-xs text-slate-400" placeholder="URL Imagem EXPLICAÇÃO" /></div>
+                <div className="flex gap-2 pt-2"><button onClick={handleInlineSave} className="flex-1 bg-green-600 text-white py-2 rounded font-black text-xs uppercase hover:bg-green-700 flex items-center justify-center gap-2"><Save size={14}/> Salvar Alterações</button><button onClick={cancelEditing} className="px-4 py-2 border border-slate-300 rounded text-slate-500 font-bold text-xs uppercase hover:bg-slate-50">Cancelar</button></div>
               </div>
             ) : (
               <>
                 <div className="px-6 py-3 bg-slate-50/50 flex justify-between items-center border-b border-slate-200 font-black text-slate-700 text-[10px] uppercase">
-                  <div className="flex items-center gap-2">
-                    <span>Questão {idx + 1}</span>
-                    <span className="text-slate-300 hidden sm:inline">|</span>
-                    <div className="flex items-center gap-1.5 opacity-60">
-                      {q.origem === 'med53' ? <span className="text-[#00a884] flex items-center gap-1"><Star size={10} fill="currentColor"/> MED53</span> : <span className="text-indigo-600 flex items-center gap-1"><Archive size={10}/> BANCA</span>}
-                      <span className="text-slate-300">•</span>
-                      <span className="truncate max-w-[150px] sm:max-w-none">{q.disciplina} › {q.tema}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {respondida && (<span className={respostas[q.id] === q.resposta_correta ? 'text-[#00a884]' : 'text-rose-600'}>{respostas[q.id] === q.resposta_correta ? '✓ ACERTOU' : '✕ ERROU'}</span>)}
-                    {isAdmin && (
-                      <div className="flex items-center gap-1 ml-2 border-l pl-3 border-slate-200">
-                         <button onClick={() => startEditing(q)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"><Edit size={14}/></button>
-                         <button onClick={() => handleInlineDelete(q.id)} title="Apagar" className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"><Trash2 size={14}/></button>
-                      </div>
-                    )}
-                  </div>
+                  <div className="flex items-center gap-2"><span>Questão {idx + 1}</span><span className="text-slate-300 hidden sm:inline">|</span><div className="flex items-center gap-1.5 opacity-60">{q.origem === 'med53' ? <span className="text-[#00a884] flex items-center gap-1"><Star size={10} fill="currentColor"/> MED53</span> : <span className="text-indigo-600 flex items-center gap-1"><Archive size={10}/> BANCA</span>}<span className="text-slate-300">•</span><span className="truncate max-w-[150px] sm:max-w-none">{q.disciplina} › {q.tema}</span></div></div>
+                  <div className="flex items-center gap-3">{respondida && (<span className={respostas[q.id] === q.resposta_correta ? 'text-[#00a884]' : 'text-rose-600'}>{respostas[q.id] === q.resposta_correta ? '✓ ACERTOU' : '✕ ERROU'}</span>)}{isAdmin && (<div className="flex items-center gap-1 ml-2 border-l pl-3 border-slate-200"><button onClick={() => startEditing(q)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"><Edit size={14}/></button><button onClick={() => handleInlineDelete(q.id)} title="Apagar" className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"><Trash2 size={14}/></button></div>)}</div>
                 </div>
                 <div className="p-8">
                     <p className="text-[15.5px] font-bold text-slate-800 leading-relaxed mb-8">{q.enunciado}</p>
-                    
-                    {/* IMAGEM DO ENUNCIADO (Sempre visível se existir) */}
-                    {q.imagem_url && (
-                        <div className="mb-8 p-1.5 bg-slate-50 border border-slate-200 rounded-lg shadow-inner">
-                            <img src={q.imagem_url} alt="Referência" className="w-full max-h-80 object-contain mx-auto rounded-md" />
-                        </div>
-                    )}
-                    
-                    <div className="space-y-2.5">
-                        {q.opcoes.map((op: string, i: number) => { 
-                            let style = "border-slate-200 bg-[#F9FAFB] text-slate-700 font-bold"; 
-                            if (respondida) { 
-                              if (i === q.resposta_correta) style = "bg-[#ECFDF5] border-[#00a884] text-[#065F46]"; 
-                              else if (respostas[q.id] === i) style = "bg-[#FFF1F2] border-rose-200 text-rose-800"; 
-                              else style = "opacity-40 grayscale border-transparent"; 
-                            } 
-                            return (
-                                <button key={i} disabled={respondida} 
-                                    onClick={async () => { 
-                                        setRespostas((p: any) => ({...p, [q.id]: i})); 
-                                        // Salva histórico E atualiza o Streak
-                                        await supabase.from('historico_questoes').insert([{ user_id: user.id, questao_id: q.id, acertou: i === q.resposta_correta }]); 
-                                        await carregarStats(user.id); 
-                                        await atualizarStreak(user.id); // <--- ATUALIZA O STREAK AQUI
-                                    }} 
-                                    className={`w-full p-4 border rounded-xl text-left flex items-center gap-4 transition-all text-[13.5px] ${style}`}>
-                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${respondida && i === q.resposta_correta ? 'bg-[#00a884] text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{String.fromCharCode(65+i)}</span>{op}
-                                </button>
-                            ); 
-                        })}
-                    </div>
-                    
+                    {q.imagem_url && (<div className="mb-8 p-1.5 bg-slate-50 border border-slate-200 rounded-lg shadow-inner"><img src={q.imagem_url} alt="Referência" className="w-full max-h-80 object-contain mx-auto rounded-md" /></div>)}
+                    <div className="space-y-2.5">{q.opcoes.map((op: string, i: number) => { let style = "border-slate-200 bg-[#F9FAFB] text-slate-700 font-bold"; if (respondida) { if (i === q.resposta_correta) style = "bg-[#ECFDF5] border-[#00a884] text-[#065F46]"; else if (respostas[q.id] === i) style = "bg-[#FFF1F2] border-rose-200 text-rose-800"; else style = "opacity-40 grayscale border-transparent"; } return (<button key={i} disabled={respondida} onClick={async () => { setRespostas((p: any) => ({...p, [q.id]: i})); await supabase.from('historico_questoes').insert([{ user_id: user.id, questao_id: q.id, acertou: i === q.resposta_correta }]); await carregarStats(user.id); await atualizarStreak(user.id); }} className={`w-full p-4 border rounded-xl text-left flex items-center gap-4 transition-all text-[13.5px] ${style}`}><span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${respondida && i === q.resposta_correta ? 'bg-[#00a884] text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{String.fromCharCode(65+i)}</span>{op}</button>); })}</div>
                     {respondida && (
                       <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col items-end">
                         <div className="flex gap-4 items-center">
-                            {/* BOTÃO DE REPORTAR */}
-                            <button 
-                                onClick={() => setReportingId(isReporting ? null : q.id)} 
-                                className="text-slate-400 font-bold text-[10px] uppercase flex items-center gap-1 hover:text-rose-500 transition-colors"
-                            >
-                                <Flag size={12}/> Reportar Erro
-                            </button>
-
+                            <button onClick={() => setReportingId(isReporting ? null : q.id)} className="text-slate-400 font-bold text-[10px] uppercase flex items-center gap-1 hover:text-rose-500 transition-colors"><Flag size={12}/> Reportar Erro</button>
                             <button onClick={() => setExplicas((p: any) => ({...p, [q.id]: !p[q.id]}))} className="text-[#00a884] font-black text-[10px] uppercase flex items-center gap-2 hover:underline transition-all"><Eye size={16}/> {explicas[q.id] ? 'Fechar' : 'Ver Explicação'}</button>
                         </div>
-
-                        {/* ÁREA DE REPORTE */}
-                        {isReporting && (
-                            <div className="mt-4 p-4 bg-rose-50 border border-rose-100 rounded-lg w-full animate-in fade-in slide-in-from-top-2">
-                                <span className="block text-xs font-black text-rose-800 mb-3">Qual o problema desta questão?</span>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {['Gabarito Errado', 'Erro de Português', 'Imagem Ruim', 'Outro'].map(motivo => (
-                                        <button 
-                                            key={motivo}
-                                            onClick={() => handleReportIssue(q.id, motivo)}
-                                            className="bg-white border border-rose-200 text-rose-700 py-2 rounded text-[10px] font-bold uppercase hover:bg-rose-600 hover:text-white transition-colors"
-                                        >
-                                            {motivo}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {explicas[q.id] && (
-                            <div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner animate-in fade-in">
-                                <div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>
-                                {q.justificativa}
-                                {/* IMAGEM DA EXPLICAÇÃO (Nova!) */}
-                                {q.imagem_justificativa && (
-                                    <div className="mt-4 pt-4 border-t border-slate-200">
-                                        <img src={q.imagem_justificativa} alt="Explicação Visual" className="w-full max-h-60 object-contain mx-auto rounded-md opacity-90" />
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        {isReporting && (<div className="mt-4 p-4 bg-rose-50 border border-rose-100 rounded-lg w-full animate-in fade-in slide-in-from-top-2"><span className="block text-xs font-black text-rose-800 mb-3">Qual o problema desta questão?</span><div className="grid grid-cols-2 gap-2">{['Gabarito Errado', 'Erro de Português', 'Imagem Ruim', 'Outro'].map(motivo => (<button key={motivo} onClick={() => handleReportIssue(q.id, motivo)} className="bg-white border border-rose-200 text-rose-700 py-2 rounded text-[10px] font-bold uppercase hover:bg-rose-600 hover:text-white transition-colors">{motivo}</button>))}</div></div>)}
+                        {explicas[q.id] && (<div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner animate-in fade-in"><div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>{q.justificativa}{q.imagem_justificativa && (<div className="mt-4 pt-4 border-t border-slate-200"><img src={q.imagem_justificativa} alt="Explicação Visual" className="w-full max-h-60 object-contain mx-auto rounded-md opacity-90" /></div>)}</div>)}
                       </div>
                     )}
                 </div>
