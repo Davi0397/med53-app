@@ -5,7 +5,7 @@ import {
   Menu, X, Lock, Star, Target, ArrowLeft, BarChart3, Mail, List, 
   Save, CreditCard, AlertTriangle, Loader2, Archive, Play, 
   ChevronRight, ChevronLeft, Layout, FolderOpen, Folder, Clock,
-  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags
+  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags, MessageCircle // <--- MessageCircle IMPORTADO
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO ---
@@ -506,7 +506,18 @@ export default function App() {
           {isSignUp && <div className="relative animate-in slide-in-from-top-2"><Lock className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="password" placeholder="Confirme Senha" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required /></div>}
           <button type="submit" className="w-full bg-[#00a884] text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#00a884]/20 transition-transform active:scale-95">{isForgot ? 'Enviar Link' : (isSignUp ? 'Cadastrar' : 'Entrar')}</button>
         </form>
-        <div className="mt-6 space-y-2 text-center">
+        
+        {/* BOTÃO DE SUPORTE NO LOGIN */}
+        <div className="mt-6 mb-4">
+            <button 
+                onClick={() => window.open('https://wa.me/5500000000000', '_blank')} 
+                className="w-full bg-green-50 text-green-700 py-3 rounded-xl font-bold uppercase text-[10px] border border-green-200 hover:bg-green-100 transition-colors flex items-center justify-center gap-2"
+            >
+                <MessageCircle size={16} /> Conversar com Suporte
+            </button>
+        </div>
+
+        <div className="space-y-2 text-center">
           {!isForgot && (<><button onClick={() => setIsForgot(true)} className="block w-full text-[10px] font-bold text-slate-400 hover:text-[#00a884]">Esqueci minha senha</button><button onClick={() => {setIsSignUp(!isSignUp); setConfirmEmail(''); setConfirmPassword('');}} className="block w-full text-[10px] font-black text-slate-600 uppercase tracking-tighter hover:text-[#00a884]">{isSignUp ? 'Já tem conta? Faça Login' : 'Não tem conta? Cadastre-se'}</button></>)}
           {isForgot && (<button onClick={() => setIsForgot(false)} className="text-[10px] font-black text-slate-600 uppercase tracking-tighter hover:text-[#00a884] flex items-center justify-center gap-1 mx-auto"><ArrowLeft size={12}/> Voltar</button>)}
         </div>
@@ -582,7 +593,7 @@ export default function App() {
                 <div className="bg-slate-100 p-1 rounded-lg flex shrink-0">
                       <button onClick={() => setFilterOrigem('todos')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'todos' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Todas</button>
                       <button onClick={() => setFilterOrigem('originais')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'originais' ? 'bg-[#00a884] text-white shadow-sm' : 'text-slate-500'}`}>Originais</button>
-                      <button onClick={() => setFilterOrigem('antigas')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'antigas' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}>Antigas</button>
+                      <button onClick={() => setFilterOrigem('antigas')} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterOrigem === 'antigas' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}>Provas</button>
                 </div>
               </div>
               <div className="flex-1 overflow-hidden flex flex-col md:flex-row relative bg-white pb-[70px]">
