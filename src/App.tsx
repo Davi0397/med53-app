@@ -5,7 +5,7 @@ import {
   Menu, X, Lock, Star, Target, ArrowLeft, BarChart3, Mail, List, 
   Save, CreditCard, AlertTriangle, Loader2, Archive, Play, 
   ChevronRight, ChevronLeft, Layout, FolderOpen, Folder, Clock,
-  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags, MessageCircle // <--- MessageCircle IMPORTADO
+  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags, MessageCircle, Calendar 
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO ---
@@ -621,9 +621,47 @@ export default function App() {
           )}
 
           {viewMode === 'feed' && !abaAdmin && (
-            <div className="max-w-3xl mx-auto p-4 md:p-12 animate-in slide-in-from-right-4">
+            <div className="max-w-6xl mx-auto p-4 md:p-8 animate-in slide-in-from-right-4">
               {!isAssinante && !isAdmin ? (
-                <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-2xl text-center mt-8"><div className="flex justify-center mb-6"><div className="bg-[#00a884]/10 p-4 rounded-full"><CreditCard className="text-[#00a884]" size={40} /></div></div><h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tighter">Escolha seu Plano</h2><p className="text-slate-600 mb-12 leading-relaxed font-bold text-sm max-w-xl mx-auto">Libere acesso. Aceitamos Cartão de Crédito (até 12x), PIX e Boleto via Mercado Pago.</p><div className="grid md:grid-cols-3 gap-6"><div className="p-8 border-2 border-slate-100 rounded-3xl text-left bg-white hover:border-[#00a884]/30 hover:shadow-xl transition-all"><h3 className="font-black text-slate-800 text-lg">Mensal</h3><div className="mt-4 mb-6"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">24,90</span><span className="text-xs font-bold text-slate-400">/mês</span></div><button onClick={() => window.open('https://mpago.li/2yjdqU2', '_blank')} className="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#00a884] transition-colors">Assinar</button></div><div className="p-8 border-2 border-slate-100 rounded-3xl text-left bg-white hover:border-[#00a884]/30 hover:shadow-xl transition-all relative"><h3 className="font-black text-slate-800 text-lg">Semestral</h3><div className="mt-4 mb-2"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">119</span></div><p className="text-[11px] font-black text-[#00a884] mb-6">👉 R$ 19,80/mês</p><button onClick={() => window.open('LINK_SEMESTRAL', '_blank')} className="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#00a884] transition-colors">Indisponível!</button></div><div className="p-8 border-2 border-[#00a884] rounded-3xl text-left bg-[#00a884]/5 relative shadow-lg shadow-[#00a884]/10"><div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#00a884] text-white text-[9px] px-3 py-1 rounded-full font-black uppercase tracking-widest shadow-md">Recomendado</div><h3 className="font-black text-slate-800 text-lg">Anual</h3><div className="mt-4 mb-2"><span className="text-sm font-bold text-slate-400">R$</span><span className="text-3xl font-black text-slate-900">199</span></div><p className="text-[11px] font-black text-[#00a884] mb-6">👉 R$ 16,60/mês</p><button onClick={() => window.open('LINK_ANUAL', '_blank')} className="w-full bg-[#00a884] text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#008f6f] transition-colors">Indisponível</button></div></div><p className="mt-10 text-[11px] font-bold text-slate-400">Pagou? <button onClick={() => window.open('https://wa.me/SEU_ZAP', '_blank')} className="text-[#00a884] underline">Envie o comprovante</button> para liberação imediata.</p></div>
+                <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-2xl text-center mt-8">
+                    <div className="flex justify-center mb-6"><div className="bg-[#00a884]/10 p-4 rounded-full"><CreditCard className="text-[#00a884]" size={40} /></div></div>
+                    <h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tighter">Escolha seu Plano</h2>
+                    <p className="text-slate-600 mb-12 leading-relaxed font-bold text-sm max-w-xl mx-auto">Libere acesso imediato. Aceitamos Cartão, PIX e Boleto.</p>
+                    
+                    {/* --- ÁREA DE PREÇOS ATUALIZADA (Semanal e Mensal apenas) --- */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+                        
+                        {/* Plano Semanal - O "Chamariz" */}
+                        <div className="p-6 border border-slate-200 rounded-2xl text-left bg-white hover:border-slate-300 transition-all flex flex-col">
+                            <div className="mb-4 text-slate-400"><Clock size={24}/></div>
+                            <h3 className="font-black text-slate-700 text-sm uppercase">Semanal</h3>
+                            <div className="mt-2 mb-4">
+                                <span className="text-xs font-bold text-slate-400">R$</span>
+                                <span className="text-3xl font-black text-slate-900">12,90</span>
+                            </div>
+                            <p className="text-[10px] font-bold text-slate-400 mb-6">Acesso total por 7 dias. Ideal para revisões rápidas.</p>
+                            <button onClick={() => window.open('https://mpago.li/2otGiyH', '_blank')} className="mt-auto w-full bg-slate-100 text-slate-600 py-3 rounded-xl font-black uppercase text-[10px] hover:bg-slate-200 transition-colors">Assinar</button>
+                        </div>
+
+                        {/* Plano Mensal - O Padrão */}
+                        <div className="p-6 border-2 border-[#00a884] rounded-2xl text-left bg-[#00a884]/5 relative shadow-lg shadow-[#00a884]/10 flex flex-col transform scale-105 z-10">
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#00a884] text-white text-[9px] px-3 py-1 rounded-full font-black uppercase tracking-widest shadow-md">Popular</div>
+                            <div className="mb-4 text-[#00a884]"><Zap size={24}/></div>
+                            <h3 className="font-black text-slate-800 text-sm uppercase">Mensal</h3>
+                            <div className="mt-2 mb-4">
+                                <span className="text-xs font-bold text-slate-400">R$</span>
+                                <span className="text-3xl font-black text-slate-900">19,90</span>
+                                <span className="text-[10px] text-slate-400 font-bold">/mês</span>
+                            </div>
+                            <p className="text-[10px] font-bold text-[#00a884] mb-6">RGarantia de estudo para o mês inteiro, por um valor que compensa!</p>
+                            <button onClick={() => window.open('https://mpago.li/2DZyCFC', '_blank')} className="mt-auto w-full bg-[#00a884] text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#008f6f] transition-colors">Assinar Agora</button>
+                        </div>
+
+                    </div>
+                    {/* ----------------------------- */}
+
+                    <p className="mt-10 text-[11px] font-bold text-slate-400">Pagou? <button onClick={() => window.open('https://wa.me/SEU_ZAP', '_blank')} className="text-[#00a884] underline">Envie o comprovante</button> para liberação imediata.</p>
+                </div>
               ) : (
                 <div className="space-y-8">
                   {/* Stats e Título */}
