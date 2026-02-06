@@ -502,15 +502,15 @@ export default function App() {
         <form onSubmit={handleAuth} className="space-y-4">
           <div className="relative"><Mail className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="email" placeholder="E-mail" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={email} onChange={e => setEmail(e.target.value)} required /></div>
           {isSignUp && <div className="relative animate-in slide-in-from-top-2"><Mail className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="email" placeholder="Confirme E-mail" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={confirmEmail} onChange={e => setConfirmEmail(e.target.value)} required /></div>}
-          {!isForgot && <div className="relative"><Lock className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="password" placeholder="Senha" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={password} onChange={e => setPassword(e.target.value)} required /></div>}
-          {isSignUp && <div className="relative animate-in slide-in-from-top-2"><Lock className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="password" placeholder="Confirme Senha" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required /></div>}
+          {!isForgot && <div className="relative"><Lock className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="password" placeholder="Senha (≥ 8 dígitos)" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={password} onChange={e => setPassword(e.target.value)} required /></div>}
+          {isSignUp && <div className="relative animate-in slide-in-from-top-2"><Lock className="absolute left-4 top-3.5 text-slate-400" size={16} /><input type="password" placeholder="Confirme Senha (≥ 8 dígitos)" className="w-full pl-12 p-4 bg-slate-50 border-none rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#00a884]/20 text-slate-800 font-bold" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required /></div>}
           <button type="submit" className="w-full bg-[#00a884] text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#00a884]/20 transition-transform active:scale-95">{isForgot ? 'Enviar Link' : (isSignUp ? 'Cadastrar' : 'Entrar')}</button>
         </form>
         
         {/* BOTÃO DE SUPORTE NO LOGIN */}
         <div className="mt-6 mb-4">
             <button 
-                onClick={() => window.open('https://wa.me/5500000000000', '_blank')} 
+                onClick={() => window.open('https://wa.me/5533988553844', '_blank')} 
                 className="w-full bg-green-50 text-green-700 py-3 rounded-xl font-bold uppercase text-[10px] border border-green-200 hover:bg-green-100 transition-colors flex items-center justify-center gap-2"
             >
                 <MessageCircle size={16} /> Conversar com Suporte
@@ -518,7 +518,7 @@ export default function App() {
         </div>
 
         <div className="space-y-2 text-center">
-          {!isForgot && (<><button onClick={() => setIsForgot(true)} className="block w-full text-[10px] font-bold text-slate-400 hover:text-[#00a884]">Esqueci minha senha</button><button onClick={() => {setIsSignUp(!isSignUp); setConfirmEmail(''); setConfirmPassword('');}} className="block w-full text-[10px] font-black text-slate-600 uppercase tracking-tighter hover:text-[#00a884]">{isSignUp ? 'Já tem conta? Faça Login' : 'Não tem conta? Cadastre-se'}</button></>)}
+          {!isForgot && (<><button onClick={() => setIsForgot(true)} className="block w-full text-[10px] font-bold text-slate-400 hover:text-[#00a884]"></button><button onClick={() => {setIsSignUp(!isSignUp); setConfirmEmail(''); setConfirmPassword('');}} className="block w-full text-[10px] font-black text-slate-600 uppercase tracking-tighter hover:text-[#00a884]">{isSignUp ? 'Já tem conta? Faça Login' : 'Não tem conta? Cadastre-se'}</button></>)}
           {isForgot && (<button onClick={() => setIsForgot(false)} className="text-[10px] font-black text-slate-600 uppercase tracking-tighter hover:text-[#00a884] flex items-center justify-center gap-1 mx-auto"><ArrowLeft size={12}/> Voltar</button>)}
         </div>
       </div>
@@ -626,7 +626,7 @@ export default function App() {
                 <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-2xl text-center mt-8">
                     <div className="flex justify-center mb-6"><div className="bg-[#00a884]/10 p-4 rounded-full"><CreditCard className="text-[#00a884]" size={40} /></div></div>
                     <h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tighter">Escolha seu Plano</h2>
-                    <p className="text-slate-600 mb-12 leading-relaxed font-bold text-sm max-w-xl mx-auto">Libere acesso imediato. Aceitamos Cartão, PIX e Boleto.</p>
+                    <p className="text-slate-600 mb-12 leading-relaxed font-bold text-sm max-w-xl mx-auto">Libere acesso. Aceitamos Cartão, PIX e Boleto.</p>
                     
                     {/* --- ÁREA DE PREÇOS ATUALIZADA (Semanal e Mensal apenas) --- */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
@@ -653,14 +653,14 @@ export default function App() {
                                 <span className="text-3xl font-black text-slate-900">19,90</span>
                                 <span className="text-[10px] text-slate-400 font-bold">/mês</span>
                             </div>
-                            <p className="text-[10px] font-bold text-[#00a884] mb-6">RGarantia de estudo para o mês inteiro, por um valor que compensa!</p>
+                            <p className="text-[10px] font-bold text-[#00a884] mb-6">Garantia de estudo para o mês inteiro, por um valor que compensa!</p>
                             <button onClick={() => window.open('https://mpago.li/2DZyCFC', '_blank')} className="mt-auto w-full bg-[#00a884] text-white py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#008f6f] transition-colors">Assinar Agora</button>
                         </div>
 
                     </div>
                     {/* ----------------------------- */}
 
-                    <p className="mt-10 text-[11px] font-bold text-slate-400">Pagou? <button onClick={() => window.open('https://wa.me/SEU_ZAP', '_blank')} className="text-[#00a884] underline">Envie o comprovante</button> para liberação imediata.</p>
+                    <p className="mt-10 text-[11px] font-bold text-slate-400">Pagou? <button onClick={() => window.open('https://wa.me/5533988553844', '_blank')} className="text-[#00a884] underline">Envie o comprovante</button> para podermos liberar acesso.</p>
                 </div>
               ) : (
                 <div className="space-y-8">
