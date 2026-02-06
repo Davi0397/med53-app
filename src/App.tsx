@@ -5,7 +5,7 @@ import {
   Menu, X, Lock, Star, Target, ArrowLeft, BarChart3, Mail, List, 
   Save, CreditCard, AlertTriangle, Loader2, Archive, Play, 
   ChevronRight, ChevronLeft, Layout, FolderOpen, Folder, Clock,
-  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags, MessageCircle, Calendar 
+  Trash2, Edit, Flame, Flag, AlertOctagon, ShieldAlert, Server, Zap, Tags, MessageCircle, Calendar, Gift 
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO ---
@@ -16,17 +16,38 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, storage: window.localStorage, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
-// --- FUNÇÃO AUXILIAR DE EMBARALHAMENTO ---
+// --- FUNÇÃO AUXILIAR: RENDERIZAR ITÁLICO COM ASTERISCOS ---
+// Transforma "*texto*" em "<i>texto</i>" visualmente
+function renderizarItalico(texto: string) {
+  if (!texto) return null;
+  const partes = texto.split('*');
+  return partes.map((parte, index) => {
+    if (index % 2 === 1) {
+      return <i key={index}>{parte}</i>;
+    }
+    return parte;
+  });
+}
+
+// --- FUNÇÃO DE EMBARALHAMENTO (FISHER-YATES) ---
+// Garante aleatoriedade real para que a resposta não seja sempre 'B'
 function embaralharQuestoes(listaQuestoes: any[]) {
   return listaQuestoes.map(q => {
     if (!q.opcoes || q.opcoes.length === 0) return q;
+
+    // 1. Mapeia opções mantendo o rastreio da correta
     const opcoesMapeadas = q.opcoes.map((texto: string, index: number) => ({
-      texto, ehCorreta: index === q.resposta_correta
+      texto, 
+      ehCorreta: index === q.resposta_correta
     }));
+
+    // 2. Algoritmo de embaralhamento robusto
     for (let i = opcoesMapeadas.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [opcoesMapeadas[i], opcoesMapeadas[j]] = [opcoesMapeadas[j], opcoesMapeadas[i]];
     }
+
+    // 3. Retorna a questão com a nova ordem e índice atualizado
     return {
       ...q,
       opcoes: opcoesMapeadas.map((o: any) => o.texto),
@@ -43,6 +64,11 @@ export default function App() {
   const [sessaoInvalida, setSessaoInvalida] = useState(false);
   const [viewMode, setViewMode] = useState<'home' | 'feed'>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
+  // --- ESTADOS PARA TROCA DE SENHA ---
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confNewPassword, setConfNewPassword] = useState('');
 
   // Streak
   const [streak, setStreak] = useState(0);
@@ -124,6 +150,20 @@ export default function App() {
       setEditingId(null); setEditForm({});
     }
     setLoading(false);
+  };
+
+  // --- FUNÇÃO PARA TROCAR SENHA ---
+  const handleChangePassword = async () => {
+    if (newPassword !== confNewPassword) return alert("As senhas não conferem.");
+    if (newPassword.length < 6) return alert("A senha deve ter no mínimo 6 caracteres.");
+    setLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setLoading(false);
+    if (error) alert("Erro: " + error.message);
+    else {
+        alert("Senha alterada com sucesso!");
+        setShowPasswordModal(false); setNewPassword(''); setConfNewPassword('');
+    }
   };
 
   const handleReportIssue = async (qId: number, motivo: string) => {
@@ -234,7 +274,6 @@ export default function App() {
     return () => { mounted = false; clearTimeout(safetyTimer); subscription.unsubscribe(); };
   }, []);
 
-  // --- CORREÇÃO MATEMÁTICA AQUI ---
   const contagemPrevia = useMemo(() => {
     let total = 0;
     selectedDiscs.forEach(d => {
@@ -243,12 +282,8 @@ export default function App() {
         if (selectedTemas.includes(t)) {
           const dadosTema = filtroMapa[d].temas[t];
           const listaSubtemas = Object.keys(dadosTema.subtemas);
-          
-          // SOMA AS QUESTÕES "SEM SUBTEMA" (Aquelas que a gente estava perdendo)
           total += (dadosTema.semSubtema || 0);
-
           if (listaSubtemas.length > 0) {
-            // SOMA AS QUESTÕES DOS SUBTEMAS SELECIONADOS
             listaSubtemas.forEach(sub => { 
                 if (selectedSubtemas.includes(sub)) total += dadosTema.subtemas[sub]; 
             });
@@ -313,6 +348,29 @@ export default function App() {
     alert("Liberado!"); carregarListaUsuarios();
   }
 
+  // --- NOVA FUNÇÃO: DAR 24 HORAS DE ACESSO ---
+  async function conceder24h(userId: string) {
+    if(!confirm("Tem certeza que deseja dar 24h de acesso para este usuário?")) return;
+    
+    const agora = new Date();
+    agora.setHours(agora.getHours() + 24); // Adiciona 24h
+    const dataIso = agora.toISOString();
+
+    // OBS: Se você criou a constraint no banco, garanta que 'cortesia_admin' seja permitido ou use 'mensal'
+    const { error } = await supabase.from('assinaturas').upsert({ 
+        user_id: userId, 
+        status: 'ativo', 
+        data_expiracao: dataIso,
+        plano: 'cortesia_admin' 
+    }, { onConflict: 'user_id' });
+
+    if(error) alert("Erro ao conceder acesso: " + error.message);
+    else {
+        alert("Acesso liberado por 24 horas!");
+        carregarListaUsuarios();
+    }
+  }
+
   async function carregarStats(uid: string) {
     const { data } = await supabase.from('historico_questoes').select('acertou').eq('user_id', uid);
     if (data) setStats({ totalSemana: data.length, taxa: data.length > 0 ? Math.round((data.filter(h => h.acertou).length / data.length) * 100) : 0 });
@@ -326,30 +384,22 @@ export default function App() {
   useEffect(() => {
     const mapa: any = {};
     allData.forEach(q => {
-      // Cria nome para fantasmas
       const disciplinaNome = q.disciplina || '⚠️ SEM DISCIPLINA'; 
-      
       if (filterOrigem === 'originais' && q.origem !== 'med53') return;
       if (filterOrigem === 'antigas' && q.origem === 'med53') return;
-      
       if (!mapa[disciplinaNome]) mapa[disciplinaNome] = { total: 0, temas: {} };
       mapa[disciplinaNome].total++; 
-
       if (q.tema) {
-        // Inicializa o objeto do tema
         if (!mapa[disciplinaNome].temas[q.tema]) {
             mapa[disciplinaNome].temas[q.tema] = { total: 0, subtemas: {}, semSubtema: 0 };
         }
         mapa[disciplinaNome].temas[q.tema].total++; 
-        
-        // AQUI ESTAVA O PROBLEMA: Agora contamos quem NÃO TEM subtema
         if (q.subtema) {
             if (!mapa[disciplinaNome].temas[q.tema].subtemas[q.subtema]) {
                 mapa[disciplinaNome].temas[q.tema].subtemas[q.subtema] = 0;
             }
             mapa[disciplinaNome].temas[q.tema].subtemas[q.subtema]++;
         } else {
-            // Conta as órfãs de subtema
             mapa[disciplinaNome].temas[q.tema].semSubtema++;
         }
       }
@@ -394,15 +444,15 @@ export default function App() {
     if (error) { setQuestoes([]); } else {
       const filtradas = (data || []).filter(item => {
           if (item.subtema) return selectedSubtemas.some(selected => selected.trim().toLowerCase() === item.subtema.trim().toLowerCase());
-          return true; // Mantém quem não tem subtema!
+          return true;
       });
+      // AQUI: Embaralha apenas se NÃO for Admin
       setQuestoes(isAdmin ? filtradas : embaralharQuestoes(filtradas));
       setHasMore(count ? (inicio + itemsPerPage) < count : false);
     }
     setLoading(false);
   }
 
-  // --- FILTROS COMPLETOS ---
   const handleSelectDisc = (disc: string, checked: boolean) => {
     const newDiscs = checked ? [...selectedDiscs, disc] : selectedDiscs.filter(d => d !== disc);
     setSelectedDiscs(newDiscs);
@@ -528,7 +578,24 @@ export default function App() {
   const isAssinante = assinatura?.status === 'ativo' && new Date(assinatura.data_expiracao) > new Date();
 
   return (
-    <div className="h-screen w-screen bg-[#FBFBFB] text-slate-800 font-sans text-[13px] flex flex-col overflow-hidden">
+    <div className="h-screen w-screen bg-[#FBFBFB] text-slate-800 font-sans text-[13px] flex flex-col overflow-hidden relative">
+      {/* --- MODAL DE TROCA DE SENHA --- */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl animate-in zoom-in-95">
+                <div className="flex justify-between items-center mb-4 pb-2 border-b">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2"><Lock size={16} className="text-[#00a884]"/> Alterar Senha</h3>
+                    <button onClick={() => {setShowPasswordModal(false); setNewPassword(''); setConfNewPassword('');}} className="text-slate-400 hover:text-slate-600"><X size={18}/></button>
+                </div>
+                <div className="space-y-3">
+                    <input type="password" placeholder="Nova Senha" className="w-full p-3 border border-slate-300 rounded-lg text-xs font-bold" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                    <input type="password" placeholder="Confirmar Nova Senha" className="w-full p-3 border border-slate-300 rounded-lg text-xs font-bold" value={confNewPassword} onChange={e => setConfNewPassword(e.target.value)} />
+                    <button onClick={handleChangePassword} className="w-full bg-[#00a884] text-white py-3 rounded-lg font-black uppercase text-[10px] hover:bg-[#008f6f] transition-colors flex items-center justify-center gap-2">Salvar Nova Senha</button>
+                </div>
+            </div>
+        </div>
+      )}
+
       <nav className="shrink-0 bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-2">
           {viewMode === 'feed' && (
@@ -548,6 +615,12 @@ export default function App() {
               <button onClick={() => { setAbaAdmin(abaAdmin === 'reportes' ? null : 'reportes'); carregarReportes(); }} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all flex items-center gap-1 ${abaAdmin === 'reportes' ? 'bg-rose-600 text-white border-rose-600' : 'text-slate-600 border-slate-200'}`}> <AlertOctagon size={10}/> Reportes</button>
               <button onClick={() => { setAbaAdmin(abaAdmin === 'padronizacao' ? null : 'padronizacao'); carregarPadronizacao(); }} className={`text-[9px] font-black border px-3 py-1 rounded-md uppercase transition-all flex items-center gap-1 ${abaAdmin === 'padronizacao' ? 'bg-blue-600 text-white border-blue-600' : 'text-slate-600 border-slate-200'}`}> <Tags size={10}/> Padronização</button>
           </div>)}
+          
+          {/* --- BOTÃO ALTERAR SENHA --- */}
+          <button onClick={() => setShowPasswordModal(true)} className="hidden md:flex text-slate-600 hover:text-[#00a884] transition-colors items-center gap-1 font-black uppercase text-[10px] mr-4">
+              <Lock size={16}/> Senha
+          </button>
+          
           <button onClick={() => handleLogout(false)} className="text-slate-600 hover:text-rose-600 transition-colors flex items-center gap-1 font-black uppercase text-[10px]">Sair <LogOut size={16}/></button>
         </div>
       </nav>
@@ -575,6 +648,12 @@ export default function App() {
                     </div>
                     <button onClick={() => setViewMode('home')} className="w-full border border-slate-300 text-slate-600 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 mt-4">Alterar Filtros</button>
                 </div>
+                
+                {/* --- BOTÃO DE SENHA MOBILE --- */}
+                 <button onClick={() => {setMobileMenuOpen(false); setShowPasswordModal(true);}} className="md:hidden w-full border border-slate-300 text-slate-600 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 mt-4 flex items-center justify-center gap-2">
+                    <Lock size={14}/> Alterar Senha
+                </button>
+
                 </div>
             </aside>
           </>
@@ -626,7 +705,7 @@ export default function App() {
                 <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-2xl text-center mt-8">
                     <div className="flex justify-center mb-6"><div className="bg-[#00a884]/10 p-4 rounded-full"><CreditCard className="text-[#00a884]" size={40} /></div></div>
                     <h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tighter">Escolha seu Plano</h2>
-                    <p className="text-slate-600 mb-12 leading-relaxed font-bold text-sm max-w-xl mx-auto">Libere acesso. Aceitamos Cartão, PIX e Boleto.</p>
+                    <p className="text-slate-600 mb-12 leading-relaxed font-bold text-sm max-w-xl mx-auto">Libere acesso imediato. Aceitamos Cartão, PIX e Boleto.</p>
                     
                     {/* --- ÁREA DE PREÇOS ATUALIZADA (Semanal e Mensal apenas) --- */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
@@ -637,7 +716,7 @@ export default function App() {
                             <h3 className="font-black text-slate-700 text-sm uppercase">Semanal</h3>
                             <div className="mt-2 mb-4">
                                 <span className="text-xs font-bold text-slate-400">R$</span>
-                                <span className="text-3xl font-black text-slate-900">12,90</span>
+                                <span className="text-3xl font-black text-slate-900">8,90</span>
                             </div>
                             <p className="text-[10px] font-bold text-slate-400 mb-6">Acesso total por 7 dias. Ideal para revisões rápidas.</p>
                             <button onClick={() => window.open('https://mpago.li/2otGiyH', '_blank')} className="mt-auto w-full bg-slate-100 text-slate-600 py-3 rounded-xl font-black uppercase text-[10px] hover:bg-slate-200 transition-colors">Assinar</button>
@@ -740,7 +819,11 @@ export default function App() {
                           <td className="p-4"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${u.assinatura?.status === 'ativo' ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'}`}>{u.assinatura?.status || 'pendente'}</span></td>
                           <td className="p-4"><div className="text-[11px] font-mono text-slate-600 mb-0.5 flex items-center gap-1.5"><Clock size={12} className="opacity-50"/> {dataFormatada}</div>{textoPrazo && <div className={`text-[9px] font-black uppercase tracking-wide ${corPrazo}`}>{textoPrazo}</div>}</td>
                           <td className="p-4"><input type="date" className="border border-slate-300 rounded p-1.5 text-[11px]" onChange={(e) => setDatasTemp({...datasTemp, [u.id]: e.target.value})}/></td>
-                          <td className="p-4"><button onClick={() => definirValidadeManual(u.id)} className="flex items-center gap-1 bg-[#00a884] text-white px-3 py-1.5 rounded hover:bg-[#008f6f] text-[10px] font-black uppercase transition-all"><Save size={12} /> Salvar</button></td>
+                          <td className="p-4 flex gap-2">
+                              <button onClick={() => definirValidadeManual(u.id)} className="flex items-center gap-1 bg-[#00a884] text-white px-3 py-1.5 rounded hover:bg-[#008f6f] text-[10px] font-black uppercase transition-all"><Save size={12} /> Salvar</button>
+                              {/* BOTÃO DAR 24H */}
+                              <button onClick={() => conceder24h(u.id)} className="flex items-center gap-1 bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 text-[10px] font-black uppercase transition-all" title="Dar 24h de acesso grátis"><Gift size={12} /> +24h</button>
+                          </td>
                         </tr>
                       ); 
                     })}
@@ -844,9 +927,9 @@ function questionsList(questoes: any[], respostas: any, editingId: any, editForm
                   <div className="flex items-center gap-3">{respondida && (<span className={respostas[q.id] === q.resposta_correta ? 'text-[#00a884]' : 'text-rose-600'}>{respostas[q.id] === q.resposta_correta ? '✓ ACERTOU' : '✕ ERROU'}</span>)}{isAdmin && (<div className="flex items-center gap-1 ml-2 border-l pl-3 border-slate-200"><button onClick={() => startEditing(q)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"><Edit size={14}/></button><button onClick={() => handleInlineDelete(q.id)} title="Apagar" className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"><Trash2 size={14}/></button></div>)}</div>
                 </div>
                 <div className="p-8">
-                    <p className="text-[15.5px] font-bold text-slate-800 leading-relaxed mb-8">{q.enunciado}</p>
+                    <p className="text-[15.5px] font-bold text-slate-800 leading-relaxed mb-8">{renderizarItalico(q.enunciado)}</p>
                     {q.imagem_url && (<div className="mb-8 p-1.5 bg-slate-50 border border-slate-200 rounded-lg shadow-inner"><img src={q.imagem_url} alt="Referência" className="w-full max-h-80 object-contain mx-auto rounded-md" /></div>)}
-                    <div className="space-y-2.5">{q.opcoes.map((op: string, i: number) => { let style = "border-slate-200 bg-[#F9FAFB] text-slate-700 font-bold"; if (respondida) { if (i === q.resposta_correta) style = "bg-[#ECFDF5] border-[#00a884] text-[#065F46]"; else if (respostas[q.id] === i) style = "bg-[#FFF1F2] border-rose-200 text-rose-800"; else style = "opacity-40 grayscale border-transparent"; } return (<button key={i} disabled={respondida} onClick={async () => { setRespostas((p: any) => ({...p, [q.id]: i})); await supabase.from('historico_questoes').insert([{ user_id: user.id, questao_id: q.id, acertou: i === q.resposta_correta }]); await carregarStats(user.id); await atualizarStreak(user.id); }} className={`w-full p-4 border rounded-xl text-left flex items-center gap-4 transition-all text-[13.5px] ${style}`}><span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${respondida && i === q.resposta_correta ? 'bg-[#00a884] text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{String.fromCharCode(65+i)}</span>{op}</button>); })}</div>
+                    <div className="space-y-2.5">{q.opcoes.map((op: string, i: number) => { let style = "border-slate-200 bg-[#F9FAFB] text-slate-700 font-bold"; if (respondida) { if (i === q.resposta_correta) style = "bg-[#ECFDF5] border-[#00a884] text-[#065F46]"; else if (respostas[q.id] === i) style = "bg-[#FFF1F2] border-rose-200 text-rose-800"; else style = "opacity-40 grayscale border-transparent"; } return (<button key={i} disabled={respondida} onClick={async () => { setRespostas((p: any) => ({...p, [q.id]: i})); await supabase.from('historico_questoes').insert([{ user_id: user.id, questao_id: q.id, acertou: i === q.resposta_correta }]); await carregarStats(user.id); await atualizarStreak(user.id); }} className={`w-full p-4 border rounded-xl text-left flex items-center gap-4 transition-all text-[13.5px] ${style}`}><span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${respondida && i === q.resposta_correta ? 'bg-[#00a884] text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{String.fromCharCode(65+i)}</span>{renderizarItalico(op)}</button>); })}</div>
                     {respondida && (
                       <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col items-end">
                         <div className="flex gap-4 items-center">
@@ -854,7 +937,7 @@ function questionsList(questoes: any[], respostas: any, editingId: any, editForm
                             <button onClick={() => setExplicas((p: any) => ({...p, [q.id]: !p[q.id]}))} className="text-[#00a884] font-black text-[10px] uppercase flex items-center gap-2 hover:underline transition-all"><Eye size={16}/> {explicas[q.id] ? 'Fechar' : 'Ver Explicação'}</button>
                         </div>
                         {isReporting && (<div className="mt-4 p-4 bg-rose-50 border border-rose-100 rounded-lg w-full animate-in fade-in slide-in-from-top-2"><span className="block text-xs font-black text-rose-800 mb-3">Qual o problema desta questão?</span><div className="grid grid-cols-2 gap-2">{['Gabarito Errado', 'Erro de Português', 'Imagem Ruim', 'Outro'].map(motivo => (<button key={motivo} onClick={() => handleReportIssue(q.id, motivo)} className="bg-white border border-rose-200 text-rose-700 py-2 rounded text-[10px] font-bold uppercase hover:bg-rose-600 hover:text-white transition-colors">{motivo}</button>))}</div></div>)}
-                        {explicas[q.id] && (<div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner animate-in fade-in"><div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>{q.justificativa}{q.imagem_justificativa && (<div className="mt-4 pt-4 border-t border-slate-200"><img src={q.imagem_justificativa} alt="Explicação Visual" className="w-full max-h-60 object-contain mx-auto rounded-md opacity-90" /></div>)}</div>)}
+                        {explicas[q.id] && (<div className="w-full mt-6 p-7 bg-slate-50 border border-slate-200 rounded-lg text-[13.5px] text-slate-700 leading-relaxed italic shadow-inner animate-in fade-in"><div className="flex items-center gap-2 mb-3 text-[#00a884] font-black text-[10px] uppercase border-b border-[#00a884]/10 pb-1.5 tracking-widest"><Info size={14}/> Comentário Técnico</div>{renderizarItalico(q.justificativa)}{q.imagem_justificativa && (<div className="mt-4 pt-4 border-t border-slate-200"><img src={q.imagem_justificativa} alt="Explicação Visual" className="w-full max-h-60 object-contain mx-auto rounded-md opacity-90" /></div>)}</div>)}
                       </div>
                     )}
                 </div>
